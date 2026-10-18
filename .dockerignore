@@ -1,0 +1,7 @@
+.git
+.github
+data/
+pdswarm
+pdswarm.db
+web/node_modules/
+web/dist/

@@ -1,0 +1,6 @@
+/pdswarm
+/pdswarm.db
+data/
+web/dist/
+web/node_modules/
+.env
