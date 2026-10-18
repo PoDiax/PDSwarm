@@ -1,0 +1,17 @@
+services:
+  pdswarm:
+    image: ghcr.io/podiax/pdswarm:latest
+    container_name: pdswarm
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - pdswarm_data:/data
+    environment:
+      - PDSWARM_HOST=0.0.0.0
+      - PDSWARM_PORT=9000
+      - PDSWARM_DATA_DIR=/data
+
+volumes:
+  pdswarm_data:

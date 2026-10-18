@@ -1,0 +1,58 @@
+package docker
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/docker/docker/client"
+)
+
+type Service struct {
+	cli *client.Client
+}
+
+func NewService(socketPath string) (*Service, error) {
+	var opts []client.Opt
+	opts = append(opts, client.FromEnv)
+
+	if socketPath != "" {
+		host := socketPath
+		if strings.HasPrefix(host, "/") {
+			host = "unix://" + host
+		}
+		opts = append(opts, client.WithHost(host))
+	} else if os.Getenv("DOCKER_HOST") == "" {
+		opts = append(opts, client.WithHost("unix:///var/run/docker.sock"))
+	}
+
+	opts = append(opts, client.WithAPIVersionNegotiation())
+
+	cli, err := client.NewClientWithOpts(opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create docker client: %w", err)
+	}
+
+	return &Service{cli: cli}, nil
+}
+
+func NewServiceWithClient(cli *client.Client) *Service {
+	return &Service{cli: cli}
+}
+
+func (s *Service) Ping(ctx context.Context) error {
+	_, err := s.cli.Ping(ctx)
+	return err
+}
+
+func (s *Service) RawClient() *client.Client {
+	return s.cli
+}
+
+func (s *Service) Close() error {
+	if s.cli != nil {
+		return s.cli.Close()
+	}
+	return nil
+}
