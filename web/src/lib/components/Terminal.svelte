@@ -2,9 +2,9 @@
   import {
     onMount,
     onDestroy } from 'svelte';
-  import { Terminal } from '@xterm/xterm';
-  import { FitAddon } from '@xterm/addon-fit';
-  import { WebLinksAddon } from '@xterm/addon-web-links';
+  import type { Terminal } from '@xterm/xterm';
+  import type { FitAddon } from '@xterm/addon-fit';
+  import type { WebLinksAddon } from '@xterm/addon-web-links';
   import '@xterm/xterm/css/xterm.css';
   import {
     Terminal as TerminalIcon,
@@ -98,13 +98,21 @@
     }, 100);
   }
 
-  function initTerminal() {
+  async function initTerminal() {
     if (!terminalContainer) return;
 
     // Teardown existing instance if any
     cleanup();
 
-    term = new Terminal({
+    const [{ Terminal: XTerm }, { FitAddon: XFitAddon }, { WebLinksAddon: XWebLinksAddon }] = await Promise.all([
+      import('@xterm/xterm'),
+      import('@xterm/addon-fit'),
+      import('@xterm/addon-web-links'),
+    ]);
+
+    if (!terminalContainer) return;
+
+    term = new XTerm({
       cursorBlink: true,
       cursorStyle: 'block',
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
@@ -116,8 +124,8 @@
       scrollback: 5000,
     });
 
-    fitAddon = new FitAddon();
-    const webLinksAddon = new WebLinksAddon();
+    fitAddon = new XFitAddon();
+    const webLinksAddon = new XWebLinksAddon();
 
     term.loadAddon(fitAddon);
     term.loadAddon(webLinksAddon);

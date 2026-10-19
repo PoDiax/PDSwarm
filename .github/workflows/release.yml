@@ -88,38 +88,42 @@ jobs:
           sha256sum * > checksums.txt
           cd ..
 
-      # Case 1: Release was drafted/published in GitHub UI (preserve your custom notes and title!)
-      - name: Attach Assets to Published GitHub Release
-        if: steps.vars.outputs.pre_existing == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.vars.outputs.tag }}
-          files: |
+      - name: Publish or Update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.vars.outputs.tag }}
+          TITLE: ${{ github.event.inputs.title }}
+          NOTES: ${{ github.event.inputs.notes }}
+        run: |
+          ASSETS=(
             dist/pdswarm-linux-amd64
             dist/pdswarm-linux-arm64
             dist/pdswarm-linux-amd64.tar.gz
             dist/pdswarm-linux-arm64.tar.gz
             dist/checksums.txt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          )
 
-      # Case 2: Triggered via workflow_dispatch or git tag
-      - name: Create or Update GitHub Release
-        if: steps.vars.outputs.pre_existing == 'false'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.vars.outputs.tag }}
-          name: ${{ github.event.inputs.title || format('PDSwarm {0}', steps.vars.outputs.tag) }}
-          body: ${{ github.event.inputs.notes || '' }}
-          generate_release_notes: ${{ github.event.inputs.notes == '' }}
-          files: |
-            dist/pdswarm-linux-amd64
-            dist/pdswarm-linux-arm64
-            dist/pdswarm-linux-amd64.tar.gz
-            dist/pdswarm-linux-arm64.tar.gz
-            dist/checksums.txt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists. Uploading/updating assets with --clobber..."
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
+          else
+            echo "Creating release $TAG..."
+            CREATE_ARGS=("$TAG" "${ASSETS[@]}")
+            
+            if [ -n "$TITLE" ]; then
+              CREATE_ARGS+=(--title "$TITLE")
+            else
+              CREATE_ARGS+=(--title "PDSwarm $TAG")
+            fi
+            
+            if [ -n "$NOTES" ]; then
+              CREATE_ARGS+=(--notes "$NOTES")
+            else
+              CREATE_ARGS+=(--generate-notes)
+            fi
+            
+            gh release create "${CREATE_ARGS[@]}"
+          fi
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
