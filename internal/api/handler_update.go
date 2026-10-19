@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -13,9 +14,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/podiax/pdswarm/internal/config"
+	"github.com/podiax/pdswarm/internal/docker"
 	"github.com/podiax/pdswarm/internal/store"
 )
 
@@ -48,12 +51,12 @@ type ApplyUpdateResponse struct {
 
 type releaseCache struct {
 	sync.RWMutex
-	lastChecked    time.Time
-	latestVersion  string
-	releaseURL     string
-	releaseNotes   string
-	publishedAt    string
-	fetchError     string
+	lastChecked   time.Time
+	latestVersion string
+	releaseURL    string
+	releaseNotes  string
+	publishedAt   string
+	fetchError    string
 }
 
 var globalReleaseCache = &releaseCache{}
@@ -152,59 +155,82 @@ func detectInstallType() string {
 		return "docker"
 	}
 
-	if os.Getenv("INVOCATION_ID") != "" || os.Getenv("JOURNAL_STREAM") != "" {
-		return "systemd"
+	// Check if this exact process is running inside the pdswarm.service systemd cgroup
+	if cgroupData, err := os.ReadFile("/proc/self/cgroup"); err == nil {
+		if strings.Contains(string(cgroupData), "pdswarm.service") {
+			return "systemd"
+		}
 	}
-	if _, err := os.Stat("/etc/systemd/system/pdswarm.service"); err == nil {
-		return "systemd"
-	}
-	if _, err := os.Stat("/etc/systemd/system/pdswarm-update.timer"); err == nil {
-		return "systemd"
+
+	// Check if pdswarm.service exists, is actively running, and matches the installed service binary
+	if _, err := exec.LookPath("systemctl"); err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		out, err := exec.CommandContext(ctx, "systemctl", "is-active", "pdswarm.service").Output()
+		if err == nil && strings.TrimSpace(string(out)) == "active" {
+			if execPath, err := os.Executable(); err == nil {
+				cleanExec, _ := filepath.EvalSymlinks(execPath)
+				if strings.Contains(cleanExec, "/usr/local/bin/pdswarm") || strings.Contains(cleanExec, "/usr/bin/pdswarm") {
+					return "systemd"
+				}
+			}
+		}
 	}
 
 	return "standalone"
 }
 
-func checkAutoUpdateStatus(st store.Store, installType string) (enabled bool, active bool, supported bool) {
+func checkAutoUpdateStatus(st store.Store, ds *docker.Service, installType string) (enabled bool, active bool, supported bool) {
+	// 1. Docker environment: Auto-updates supported via in-process background worker + Docker self-update
 	if installType == "docker" {
-		return false, false, false
+		supported = ds != nil
+		if st != nil {
+			if val, err := st.GetSetting("auto_update_enabled"); err == nil {
+				enabled = val == "true"
+			}
+		}
+		active = enabled && supported
+		return enabled, active, supported
 	}
 
-	supported = true
+	// 2. Systemd service environment: Managed via systemd timer
+	if installType == "systemd" {
+		supported = true
+		if _, err := exec.LookPath("systemctl"); err == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
 
-	if _, err := exec.LookPath("systemctl"); err == nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-
-		out, err := exec.CommandContext(ctx, "systemctl", "--no-ask-password", "is-enabled", "pdswarm-update.timer").CombinedOutput()
-		outStr := strings.TrimSpace(string(out))
-		if err == nil && strings.Contains(outStr, "enabled") {
-			enabled = true
-		} else if strings.Contains(outStr, "disabled") {
-			enabled = false
-		} else {
-			if st != nil {
+			out, err := exec.CommandContext(ctx, "systemctl", "--no-ask-password", "is-enabled", "pdswarm-update.timer").CombinedOutput()
+			outStr := strings.TrimSpace(string(out))
+			if err == nil && strings.Contains(outStr, "enabled") {
+				enabled = true
+			} else if strings.Contains(outStr, "disabled") {
+				enabled = false
+			} else if st != nil {
 				if val, err := st.GetSetting("auto_update_enabled"); err == nil {
 					enabled = val == "true"
 				}
 			}
-		}
 
-		ctxActive, cancelActive := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancelActive()
-		outActive, err := exec.CommandContext(ctxActive, "systemctl", "--no-ask-password", "is-active", "pdswarm-update.timer").CombinedOutput()
-		if err == nil && strings.TrimSpace(string(outActive)) == "active" {
-			active = true
+			ctxActive, cancelActive := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancelActive()
+			outActive, err := exec.CommandContext(ctxActive, "systemctl", "--no-ask-password", "is-active", "pdswarm-update.timer").CombinedOutput()
+			if err == nil && strings.TrimSpace(string(outActive)) == "active" {
+				active = true
+			}
+			return enabled, active, supported
 		}
-		return enabled, active, supported
 	}
 
+	// 3. Standalone environment: Supported via in-process background scheduler + direct process replacement
+	supported = true
 	if st != nil {
 		if val, err := st.GetSetting("auto_update_enabled"); err == nil {
 			enabled = val == "true"
 		}
 	}
-	return enabled, false, false
+	active = enabled
+	return enabled, active, supported
 }
 
 func ensureSystemdUpdateUnits() error {
@@ -279,7 +305,7 @@ fi
 }
 
 // HandleGetUpdateStatus returns current version, latest GitHub release, and auto-update configuration.
-func HandleGetUpdateStatus(st store.Store) http.HandlerFunc {
+func HandleGetUpdateStatus(st store.Store, ds *docker.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		forceCheck := r.URL.Query().Get("check") == "true"
 		latestVer, relURL, relNotes, publishedAt, err := fetchLatestRelease(r.Context(), forceCheck)
@@ -297,7 +323,8 @@ func HandleGetUpdateStatus(st store.Store) http.HandlerFunc {
 		}
 
 		installType := detectInstallType()
-		autoEnabled, timerActive, autoSupported := checkAutoUpdateStatus(st, installType)
+		effectiveDS := dockerFromContext(r.Context(), ds)
+		autoEnabled, timerActive, autoSupported := checkAutoUpdateStatus(st, effectiveDS, installType)
 
 		msg := ""
 		if err != nil {
@@ -341,7 +368,7 @@ func HandleCheckUpdate(st store.Store) http.HandlerFunc {
 		}
 
 		installType := detectInstallType()
-		autoEnabled, timerActive, autoSupported := checkAutoUpdateStatus(st, installType)
+		autoEnabled, timerActive, autoSupported := checkAutoUpdateStatus(st, nil, installType)
 
 		msg := ""
 		if err != nil {
@@ -367,8 +394,8 @@ func HandleCheckUpdate(st store.Store) http.HandlerFunc {
 	}
 }
 
-// HandleSetAutoUpdate toggles the background auto-update systemd timer.
-func HandleSetAutoUpdate(st store.Store) http.HandlerFunc {
+// HandleSetAutoUpdate toggles the background auto-update schedule across systemd, docker, or standalone.
+func HandleSetAutoUpdate(st store.Store, ds *docker.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req SetAutoUpdateRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -383,7 +410,7 @@ func HandleSetAutoUpdate(st store.Store) http.HandlerFunc {
 		installType := detectInstallType()
 		var actionErr error
 
-		if installType == "systemd" || installType == "standalone" {
+		if installType == "systemd" {
 			if _, err := exec.LookPath("systemctl"); err == nil && os.Geteuid() == 0 {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
@@ -398,7 +425,8 @@ func HandleSetAutoUpdate(st store.Store) http.HandlerFunc {
 			}
 		}
 
-		autoEnabled, timerActive, autoSupported := checkAutoUpdateStatus(st, installType)
+		effectiveDS := dockerFromContext(r.Context(), ds)
+		autoEnabled, timerActive, autoSupported := checkAutoUpdateStatus(st, effectiveDS, installType)
 
 		curVer := config.Version
 		if !strings.HasPrefix(curVer, "v") {
@@ -409,7 +437,13 @@ func HandleSetAutoUpdate(st store.Store) http.HandlerFunc {
 		if actionErr != nil {
 			msg = fmt.Sprintf("Saved preference, but systemctl returned: %v", actionErr)
 		} else if req.Enabled {
-			msg = "Automated daily updates enabled (daily at 04:00 AM)."
+			if installType == "docker" {
+				msg = "Automated daily updates enabled (PDSwarm in-app container worker)."
+			} else if installType == "systemd" {
+				msg = "Automated daily updates enabled (systemd timer daily at 04:00 AM)."
+			} else {
+				msg = "Automated daily updates enabled (in-process background worker)."
+			}
 		} else {
 			msg = "Automated daily updates disabled."
 		}
@@ -433,42 +467,61 @@ func HandleSetAutoUpdate(st store.Store) http.HandlerFunc {
 	}
 }
 
-// HandleApplyUpdate initiates an immediate update of PDSwarm.
-func HandleApplyUpdate(st store.Store) http.HandlerFunc {
+// HandleApplyUpdate initiates an immediate update of PDSwarm across Docker, systemd, or Standalone.
+func HandleApplyUpdate(st store.Store, ds *docker.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		installType := detectInstallType()
+		effectiveDS := dockerFromContext(r.Context(), ds)
 
+		// 1. Docker environment: Update container via helper
 		if installType == "docker" {
-			respondJSON(w, http.StatusOK, ApplyUpdateResponse{
-				Status:  "manual",
-				Message: "PDSwarm is running inside Docker. Please run 'docker compose pull && docker compose up -d' or use Watchtower to update the container.",
-			})
-			return
-		}
-
-		updaterPath := "/usr/local/bin/pdswarm-update"
-		if _, err := os.Stat(updaterPath); err == nil {
-			cmd := exec.Command(updaterPath, "--force")
-			if err := cmd.Start(); err != nil {
-				respondJSONError(w, http.StatusInternalServerError, "failed to execute updater: "+err.Error())
+			if effectiveDS == nil {
+				respondJSONError(w, http.StatusInternalServerError, "docker service not available for self-updating")
 				return
 			}
+
+			go func() {
+				time.Sleep(1 * time.Second)
+				if err := effectiveDS.SelfUpdateContainer(context.Background(), ""); err != nil {
+					log.Printf("[ERROR] Docker container self-update failed: %v", err)
+				}
+			}()
+
 			respondJSON(w, http.StatusOK, ApplyUpdateResponse{
 				Status:  "initiated",
-				Message: "Update initiated via pdswarm-update. The service will restart automatically once installation completes.",
+				Message: "Container update initiated. PDSwarm will pull the latest image and restart with your existing volumes and ports.",
 			})
 			return
 		}
 
-		// Fallback in-process updater
+		// 2. Systemd service environment: Use pdswarm-update script or systemctl
+		if installType == "systemd" {
+			updaterPath := "/usr/local/bin/pdswarm-update"
+			if _, err := os.Stat(updaterPath); err == nil {
+				cmd := exec.Command(updaterPath, "--force")
+				if err := cmd.Start(); err != nil {
+					respondJSONError(w, http.StatusInternalServerError, "failed to execute updater: "+err.Error())
+					return
+				}
+				respondJSON(w, http.StatusOK, ApplyUpdateResponse{
+					Status:  "initiated",
+					Message: "Update initiated via pdswarm-update. The service will restart automatically once installation completes.",
+				})
+				return
+			}
+		}
+
+		// 3. Standalone environment: In-place binary replacement + detached process restart
 		go func() {
 			time.Sleep(1 * time.Second)
-			_ = runDirectBinaryUpdate()
+			if err := runDirectBinaryUpdate(); err != nil {
+				log.Printf("[ERROR] Standalone binary update failed: %v", err)
+			}
 		}()
 
 		respondJSON(w, http.StatusOK, ApplyUpdateResponse{
 			Status:  "initiated",
-			Message: "Update initiated. PDSwarm will download the latest binary and restart shortly.",
+			Message: "Update initiated. PDSwarm will download the latest binary, replace the current executable, and restart.",
 		})
 	}
 }
@@ -523,12 +576,87 @@ func runDirectBinaryUpdate() error {
 		return err
 	}
 
-	// Trigger restart
-	if _, err := exec.LookPath("systemctl"); err == nil {
-		_ = exec.Command("systemctl", "restart", "pdswarm.service").Run()
-	} else {
-		os.Exit(0)
+	// If actually running under systemd service, let systemd restart it
+	if detectInstallType() == "systemd" {
+		if _, err := exec.LookPath("systemctl"); err == nil {
+			_ = exec.Command("systemctl", "restart", "pdswarm.service").Run()
+			return nil
+		}
 	}
 
+	// Standalone binary restart: Spawn replacement process detached in new session, then exit current process
+	newProc := exec.Command(execPath, os.Args[1:]...)
+	newProc.Stdout = os.Stdout
+	newProc.Stderr = os.Stderr
+	newProc.Stdin = os.Stdin
+	newProc.Env = os.Environ()
+	newProc.SysProcAttr = &syscall.SysProcAttr{
+		Setsid: true,
+	}
+
+	if err := newProc.Start(); err != nil {
+		return fmt.Errorf("failed to spawn replacement process: %w", err)
+	}
+
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		os.Exit(0)
+	}()
+
 	return nil
+}
+
+// StartAutoUpdateScheduler runs a periodic background check (every hour) and automatically
+// applies updates if auto_update_enabled is set to true in settings.
+func StartAutoUpdateScheduler(ctx context.Context, st store.Store, ds *docker.Service) {
+	if st == nil {
+		return
+	}
+
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				val, err := st.GetSetting("auto_update_enabled")
+				if err != nil || val != "true" {
+					continue
+				}
+
+				installType := detectInstallType()
+				// In systemd mode, pdswarm-update.timer handles updates at the system level.
+				if installType == "systemd" {
+					continue
+				}
+
+				// Check GitHub for latest version
+				latestVer, _, _, _, err := fetchLatestRelease(ctx, true)
+				if err != nil || latestVer == "" {
+					continue
+				}
+
+				curVer := config.Version
+				if !strings.HasPrefix(curVer, "v") {
+					curVer = "v" + curVer
+				}
+
+				if compareVersions(curVer, latestVer) < 0 {
+					log.Printf("[INFO] Auto-updater detected new version %s (current: %s). Initiating update...", latestVer, curVer)
+					if installType == "docker" && ds != nil {
+						if err := ds.SelfUpdateContainer(ctx, ""); err != nil {
+							log.Printf("[WARN] Docker self-update failed: %v", err)
+						}
+					} else if installType == "standalone" {
+						if err := runDirectBinaryUpdate(); err != nil {
+							log.Printf("[WARN] Standalone direct binary update failed: %v", err)
+						}
+					}
+				}
+			}
+		}
+	}()
 }

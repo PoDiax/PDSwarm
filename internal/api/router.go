@@ -200,10 +200,10 @@ func SetupRouterWithRegistry(cfg *config.Config, st store.Store, ds *docker.Serv
 			protected.Get("/system/host-paths", HandleSuggestHostPaths(ds))
 			protected.Get("/system/logging", HandleGetLoggingConfig(ds, st))
 			protected.Put("/system/logging", HandleUpdateLoggingConfig(ds, st))
-			protected.Get("/system/update", HandleGetUpdateStatus(st))
+			protected.Get("/system/update", HandleGetUpdateStatus(st, ds))
 			protected.Post("/system/update/check", HandleCheckUpdate(st))
-			protected.Put("/system/update/auto", HandleSetAutoUpdate(st))
-			protected.Post("/system/update/apply", HandleApplyUpdate(st))
+			protected.Put("/system/update/auto", HandleSetAutoUpdate(st, ds))
+			protected.Post("/system/update/apply", HandleApplyUpdate(st, ds))
 			protected.Get("/system/audit-logs", HandleGetAuditLogs(cfg))
 
 			// Containers

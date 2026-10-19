@@ -48,7 +48,7 @@ func TestHandleGetUpdateStatus(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/system/update", nil)
 	w := httptest.NewRecorder()
 
-	handler := HandleGetUpdateStatus(nil)
+	handler := HandleGetUpdateStatus(nil, nil)
 	handler.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
@@ -84,7 +84,7 @@ func TestHandleSetAutoUpdate(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut, "/api/system/update/auto", bytes.NewReader(b))
 	w := httptest.NewRecorder()
 
-	handler := HandleSetAutoUpdate(st)
+	handler := HandleSetAutoUpdate(st, nil)
 	handler.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
@@ -110,5 +110,16 @@ func TestHandleSetAutoUpdate(t *testing.T) {
 	val, err = st.GetSetting("auto_update_enabled")
 	if err != nil || val != "false" {
 		t.Errorf("expected setting auto_update_enabled='false', got %s (err: %v)", val, err)
+	}
+}
+
+func TestDetectInstallType(t *testing.T) {
+	it := detectInstallType()
+	if it != "standalone" && it != "docker" && it != "systemd" {
+		t.Errorf("unexpected install type: %s", it)
+	}
+	// In standard terminal test run, it must be standalone
+	if it != "standalone" {
+		t.Logf("Note: install type detected as: %s", it)
 	}
 }

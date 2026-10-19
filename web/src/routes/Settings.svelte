@@ -238,26 +238,59 @@
   async function handleApplyUpdate() {
     if (
       !confirm(
-        "Initiate update now? PDSwarm will download the latest release and restart the service.",
+        "Initiate update now? PDSwarm will download the latest release and restart.",
       )
     ) {
       return;
     }
     isApplyingUpdate = true;
-    updateFeedback = null;
+    updateFeedback =
+      "Update initiated. Downloading latest release and restarting...";
     updateError = null;
     try {
       const res = await systemApi.applyUpdate();
-      updateFeedback = res.message;
-      setTimeout(() => {
-        loadUpdateStatus();
-      }, 5000);
+      updateFeedback =
+        res.message ||
+        "Update initiated. PDSwarm is restarting, please wait...";
+
+      const pollStart = Date.now();
+      const maxWaitMs = 60000;
+      // Give the process 2 seconds to shut down before we begin polling for the new process
+      await new Promise((r) => setTimeout(r, 2000));
+
+      const pollInterval = setInterval(async () => {
+        try {
+          const ping = await systemApi.ping();
+          if (ping && (ping.status === "OK" || ping.status === "ok")) {
+            clearInterval(pollInterval);
+            isApplyingUpdate = false;
+            try {
+              const updated = await systemApi.getUpdateStatus(true);
+              updateStatus = updated;
+              updateFeedback = `✓ Update successful! Running PDSwarm ${updated.current_version}.`;
+            } catch {
+              updateFeedback = "✓ Update successful! PDSwarm restarted.";
+            }
+            setTimeout(() => {
+              if (updateFeedback?.startsWith("✓")) {
+                updateFeedback = null;
+              }
+            }, 8000);
+          }
+        } catch {
+          if (Date.now() - pollStart > maxWaitMs) {
+            clearInterval(pollInterval);
+            isApplyingUpdate = false;
+            updateFeedback =
+              "Server restarted or still restarting. Please refresh the page if needed.";
+          }
+        }
+      }, 1500);
     } catch (err: unknown) {
+      isApplyingUpdate = false;
       updateError =
         err instanceof Error ? err.message : "Failed to initiate update";
       setTimeout(() => (updateError = null), 6000);
-    } finally {
-      isApplyingUpdate = false;
     }
   }
 
@@ -1592,16 +1625,24 @@
 
         {#if updateFeedback}
           <div
-            class="p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs flex items-center justify-between"
+            class="p-3.5 rounded-xl border {isApplyingUpdate
+              ? 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300'
+              : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'} text-xs flex items-center justify-between transition-colors"
           >
             <div class="flex items-center gap-2">
-              <CircleCheck class="w-4 h-4 shrink-0 text-emerald-400" />
+              {#if isApplyingUpdate}
+                <LoaderCircle class="w-4 h-4 shrink-0 text-cyan-400 animate-spin" />
+              {:else}
+                <CircleCheck class="w-4 h-4 shrink-0 text-emerald-400" />
+              {/if}
               <span>{updateFeedback}</span>
             </div>
-            <button
-              onclick={() => (updateFeedback = null)}
-              class="text-emerald-400 hover:text-white text-xs">&times;</button
-            >
+            {#if !isApplyingUpdate}
+              <button
+                onclick={() => (updateFeedback = null)}
+                class="text-emerald-400 hover:text-white text-xs">&times;</button
+              >
+            {/if}
           </div>
         {/if}
 
@@ -1716,32 +1757,32 @@
                 {/if}
               </button>
 
-              {#if updateStatus?.install_type !== "docker"}
-                <button
-                  type="button"
-                  onclick={handleApplyUpdate}
-                  disabled={isApplyingUpdate}
-                  class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition disabled:opacity-50 {updateStatus?.update_available
-                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-bold shadow-[0_0_15px_rgba(245,158,11,0.3)]'
-                    : 'bg-violet-600 hover:bg-violet-500 text-white shadow-[0_0_15px_rgba(124,58,237,0.3)]'}"
-                >
-                  {#if isApplyingUpdate}
-                    <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
-                    <span>Updating...</span>
-                  {:else}
-                    <Download class="w-3.5 h-3.5" />
-                    <span
-                      >{updateStatus?.update_available
-                        ? `Upgrade to ${updateStatus.latest_version}`
+              <button
+                type="button"
+                onclick={handleApplyUpdate}
+                disabled={isApplyingUpdate}
+                class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition disabled:opacity-50 {updateStatus?.update_available
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-bold shadow-[0_0_15px_rgba(245,158,11,0.3)]'
+                  : 'bg-violet-600 hover:bg-violet-500 text-white shadow-[0_0_15px_rgba(124,58,237,0.3)]'}"
+              >
+                {#if isApplyingUpdate}
+                  <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
+                  <span>Updating...</span>
+                {:else}
+                  <Download class="w-3.5 h-3.5" />
+                  <span
+                    >{updateStatus?.update_available
+                      ? `Upgrade to ${updateStatus.latest_version}`
+                      : updateStatus?.install_type === "docker"
+                        ? "Pull Image & Recreate"
                         : "Reinstall / Update Now"}</span
-                    >
-                  {/if}
-                </button>
-              {/if}
+                  >
+                {/if}
+              </button>
             </div>
           </div>
 
-          <!-- Right Column: Automated Daily Updates (systemd timer) -->
+          <!-- Right Column: Automated Daily Updates (Docker / Systemd / Standalone) -->
           <div
             class="p-4 rounded-xl bg-[#0a0b10] border border-white/[0.06] flex flex-col justify-between space-y-4"
           >
@@ -1757,26 +1798,24 @@
                   >
                 </div>
                 <div>
-                  {#if updateStatus?.install_type === "docker"}
-                    <span
-                      class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-cyan-500/10 text-cyan-400 border border-cyan-500/25"
-                    >
-                      Container Managed
-                    </span>
-                  {:else if updateStatus?.auto_update_enabled}
+                  {#if updateStatus?.auto_update_enabled}
                     <span
                       class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/25"
                     >
-                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"
-                      ></span>
-                      Timer Active (04:00 AM)
+                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                      {#if updateStatus?.install_type === "docker"}
+                        Container Worker Active
+                      {:else if updateStatus?.install_type === "systemd"}
+                        Timer Active (04:00 AM)
+                      {:else}
+                        In-App Worker Active
+                      {/if}
                     </span>
                   {:else}
                     <span
                       class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-amber-500/10 text-amber-400 border border-amber-500/25"
                     >
-                      <span class="w-1.5 h-1.5 rounded-full bg-amber-400"
-                      ></span>
+                      <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
                       Auto-Updates Disabled
                     </span>
                   {/if}
@@ -1786,13 +1825,10 @@
               {#if updateStatus?.install_type === "docker"}
                 <div class="space-y-2 text-[11px] text-slate-300">
                   <p class="leading-relaxed">
-                    PDSwarm is running inside a Docker container. In container
-                    environments, auto-updates are managed at the container
-                    engine layer rather than via host systemd timers.
+                    PDSwarm is running inside a Docker container. When enabled, PDSwarm's in-app background scheduler checks for new releases daily, pulls the updated image from GHCR, and recreates the container seamlessly with your existing volumes and ports via the Docker socket.
                   </p>
                   <p class="text-slate-400">
-                    To upgrade your container to the latest version, run in your
-                    terminal:
+                    You can also upgrade manually by clicking <strong>Pull Image & Recreate</strong> or via terminal:
                   </p>
                   <div
                     class="p-2.5 rounded-lg bg-black/60 border border-white/5 font-mono text-[10px] text-cyan-300 flex items-center justify-between"
@@ -1816,7 +1852,7 @@
                     </button>
                   </div>
                 </div>
-              {:else}
+              {:else if updateStatus?.install_type === "systemd"}
                 <div class="space-y-2 text-xs text-slate-300">
                   <p class="text-[11px] text-slate-400 leading-relaxed">
                     When enabled, systemd runs <code
@@ -1844,39 +1880,51 @@
                     </div>
                   </div>
                 </div>
+              {:else}
+                <div class="space-y-2 text-[11px] text-slate-300">
+                  <p class="leading-relaxed">
+                    Running as a standalone binary (outside of systemd). When enabled, PDSwarm checks GitHub daily, downloads the new binary, replaces the executable on disk, and restarts the process in-place.
+                  </p>
+                  <div
+                    class="p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] space-y-1.5"
+                  >
+                    <div class="flex items-center justify-between text-[11px]">
+                      <span class="text-slate-400">Execution Mode:</span>
+                      <span class="font-mono text-slate-300">Standalone Process Replacement</span>
+                    </div>
+                  </div>
+                </div>
               {/if}
             </div>
 
-            {#if updateStatus?.install_type !== "docker"}
-              <div
-                class="pt-3 border-t border-white/[0.04] flex items-center justify-between"
+            <div
+              class="pt-3 border-t border-white/[0.04] flex items-center justify-between"
+            >
+              <span class="text-[11px] text-slate-400">
+                {updateStatus?.auto_update_enabled
+                  ? "Disable background update scheduler"
+                  : "Enable daily background updates"}
+              </span>
+              <button
+                type="button"
+                onclick={handleToggleAutoUpdate}
+                disabled={isTogglingAutoUpdate}
+                class="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition disabled:opacity-50 {updateStatus?.auto_update_enabled
+                  ? 'bg-white/5 hover:bg-rose-500/10 text-slate-300 hover:text-rose-300 border border-white/10 hover:border-rose-500/30'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]'}"
               >
-                <span class="text-[11px] text-slate-400">
-                  {updateStatus?.auto_update_enabled
-                    ? "Disable background update timer"
-                    : "Enable daily background updates"}
-                </span>
-                <button
-                  type="button"
-                  onclick={handleToggleAutoUpdate}
-                  disabled={isTogglingAutoUpdate}
-                  class="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition disabled:opacity-50 {updateStatus?.auto_update_enabled
-                    ? 'bg-white/5 hover:bg-rose-500/10 text-slate-300 hover:text-rose-300 border border-white/10 hover:border-rose-500/30'
-                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]'}"
-                >
-                  {#if isTogglingAutoUpdate}
-                    <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
-                    <span>Saving...</span>
-                  {:else if updateStatus?.auto_update_enabled}
-                    <Power class="w-3.5 h-3.5" />
-                    <span>Disable Auto-Updates</span>
-                  {:else}
-                    <Check class="w-3.5 h-3.5" />
-                    <span>Enable Daily Auto-Updates</span>
-                  {/if}
-                </button>
-              </div>
-            {/if}
+                {#if isTogglingAutoUpdate}
+                  <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
+                  <span>Saving...</span>
+                {:else if updateStatus?.auto_update_enabled}
+                  <Power class="w-3.5 h-3.5" />
+                  <span>Disable Auto-Updates</span>
+                {:else}
+                  <Check class="w-3.5 h-3.5" />
+                  <span>Enable Daily Auto-Updates</span>
+                {/if}
+              </button>
+            </div>
           </div>
         </div>
       </div>

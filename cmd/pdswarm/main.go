@@ -97,7 +97,12 @@ func main() {
 	// 5. Assemble chi router with static file server attached
 	router := api.SetupRouter(cfg, st, ds, pdswarm.WebFS())
 
-	// 6. Start HTTP server
+	// 6. Launch in-app background auto-updater scheduler
+	appCtx, appCancel := context.WithCancel(context.Background())
+	defer appCancel()
+	api.StartAutoUpdateScheduler(appCtx, st, ds)
+
+	// 7. Start HTTP server
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 	server := &http.Server{
 		Addr:              addr,
