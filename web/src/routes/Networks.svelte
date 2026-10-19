@@ -1,22 +1,21 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import {
+    onMount,
+    onDestroy } from "svelte";
   import {
     Network as NetworkIcon,
     Plus,
     Search,
     RefreshCw,
-    Trash2,
+    Trash,
     Scissors,
-    AlertCircle,
-    CheckCircle2,
-    Loader2,
+    CircleAlert,
+    CircleCheck,
+    LoaderCircle,
     Copy,
     Check,
-    Layers,
-    Clock,
-    AlertTriangle,
+    TriangleAlert,
     X,
-    Filter,
     Shield,
     Box,
     Globe,
@@ -24,9 +23,9 @@
     ChevronUp,
     Info,
   } from '@lucide/svelte';
-  import { networkApi, containerApi } from '../lib/api';
-  import type { Network, Container } from '../lib/types';
-  import CreateNetworkModal from '../lib/components/CreateNetworkModal.svelte';
+  import { networkApi, containerApi } from "../lib/api";
+  import type { Network, Container } from "../lib/types";
+  import CreateNetworkModal from "../lib/components/CreateNetworkModal.svelte";
 
   interface Props {
     onNavigate?: (tab: string) => void;
@@ -41,11 +40,13 @@
   let isLoading = $state(true);
   let isRefreshing = $state(false);
   let error = $state<string | null>(null);
-  let feedback = $state<{ type: 'success' | 'error'; message: string } | null>(null);
+  let feedback = $state<{ type: "success" | "error"; message: string } | null>(
+    null,
+  );
 
   // Search & Filters
-  let searchQuery = $state('');
-  let driverFilter = $state<string>('all');
+  let searchQuery = $state("");
+  let driverFilter = $state<string>("all");
 
   // Modals
   let isCreateModalOpen = $state(false);
@@ -62,9 +63,9 @@
   let copiedId = $state<string | null>(null);
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
-  const systemNetworkNames = new Set(['bridge', 'host', 'none']);
+  const systemNetworkNames = new Set(["bridge", "host", "none"]);
 
-  function showFeedback(type: 'success' | 'error', message: string) {
+  function showFeedback(type: "success" | "error", message: string) {
     feedback = { type, message };
     setTimeout(() => {
       if (feedback?.message === message) {
@@ -88,7 +89,7 @@
       if (err instanceof Error) {
         error = err.message;
       } else {
-        error = 'Failed to load Docker networks.';
+        error = "Failed to load Docker networks.";
       }
     } finally {
       isLoading = false;
@@ -108,7 +109,7 @@
   });
 
   function getShortId(fullId?: string): string {
-    if (!fullId) return 'unknown';
+    if (!fullId) return "unknown";
     return fullId.slice(0, 12);
   }
 
@@ -121,35 +122,52 @@
   }
 
   function isSystemNetwork(net: Network): boolean {
-    return systemNetworkNames.has(net.Name.toLowerCase()) || net.Driver === 'null';
+    return (
+      systemNetworkNames.has(net.Name.toLowerCase()) || net.Driver === "null"
+    );
   }
 
   function getDriverStyle(driver: string): { badge: string; text: string } {
-    const d = (driver || '').toLowerCase();
-    if (d === 'bridge') {
-      return { badge: 'bg-violet-500/15 text-violet-300 border-violet-500/30', text: 'Bridge' };
+    const d = (driver || "").toLowerCase();
+    if (d === "bridge") {
+      return {
+        badge: "bg-violet-500/15 text-violet-300 border-violet-500/30",
+        text: "Bridge",
+      };
     }
-    if (d === 'host') {
-      return { badge: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30', text: 'Host' };
+    if (d === "host") {
+      return {
+        badge: "bg-cyan-500/15 text-cyan-300 border-cyan-500/30",
+        text: "Host",
+      };
     }
-    if (d === 'overlay') {
-      return { badge: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30', text: 'Overlay' };
+    if (d === "overlay") {
+      return {
+        badge: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+        text: "Overlay",
+      };
     }
-    if (d === 'macvlan') {
-      return { badge: 'bg-amber-500/15 text-amber-300 border-amber-500/30', text: 'Macvlan' };
+    if (d === "macvlan") {
+      return {
+        badge: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+        text: "Macvlan",
+      };
     }
-    return { badge: 'bg-slate-500/15 text-slate-300 border-slate-500/30', text: driver || 'null' };
+    return {
+      badge: "bg-slate-500/15 text-slate-300 border-slate-500/30",
+      text: driver || "null",
+    };
   }
 
   function getSubnetInfo(net: Network): { subnet: string; gateway: string } {
     const config = net.IPAM?.Config;
     if (config && config.length > 0) {
       return {
-        subnet: config[0].Subnet || '—',
-        gateway: config[0].Gateway || '—',
+        subnet: config[0].Subnet || "—",
+        gateway: config[0].Gateway || "—",
       };
     }
-    return { subnet: '—', gateway: '—' };
+    return { subnet: "—", gateway: "—" };
   }
 
   interface AttachedEndpoint {
@@ -183,17 +201,18 @@
   });
 
   let filteredNetworks = $derived.by(() => {
-    return networks.filter(n => {
-      if (driverFilter !== 'all' && n.Driver !== driverFilter) {
+    return networks.filter((n) => {
+      if (driverFilter !== "all" && n.Driver !== driverFilter) {
         return false;
       }
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase().trim();
       const nameMatch = n.Name.toLowerCase().includes(q);
       const idMatch = n.Id.toLowerCase().includes(q);
-      const driverMatch = (n.Driver || '').toLowerCase().includes(q);
+      const driverMatch = (n.Driver || "").toLowerCase().includes(q);
       const subnetInfo = getSubnetInfo(n);
-      const subnetMatch = subnetInfo.subnet.includes(q) || subnetInfo.gateway.includes(q);
+      const subnetMatch =
+        subnetInfo.subnet.includes(q) || subnetInfo.gateway.includes(q);
       return nameMatch || idMatch || driverMatch || subnetMatch;
     });
   });
@@ -208,7 +227,10 @@
   // Actions
   function openDeleteModal(net: Network) {
     if (isSystemNetwork(net)) {
-      showFeedback('error', `Cannot delete built-in system network "${net.Name}".`);
+      showFeedback(
+        "error",
+        `Cannot delete built-in system network "${net.Name}".`,
+      );
       return;
     }
     deleteNetworkTarget = net;
@@ -225,14 +247,14 @@
 
     try {
       await networkApi.remove(deleteNetworkTarget.Id);
-      showFeedback('success', `Network "${deleteNetworkTarget.Name}" removed.`);
+      showFeedback("success", `Network "${deleteNetworkTarget.Name}" removed.`);
       closeDeleteModal();
       await fetchNetworks(true);
     } catch (err: unknown) {
       if (err instanceof Error) {
-        showFeedback('error', `Failed to remove network: ${err.message}`);
+        showFeedback("error", `Failed to remove network: ${err.message}`);
       } else {
-        showFeedback('error', 'Failed to remove network.');
+        showFeedback("error", "Failed to remove network.");
       }
     } finally {
       isDeleting = false;
@@ -244,14 +266,17 @@
     try {
       const res = await networkApi.prune();
       const count = res.NetworksDeleted?.length || 0;
-      showFeedback('success', `Pruned ${count} unused network${count === 1 ? '' : 's'}.`);
+      showFeedback(
+        "success",
+        `Pruned ${count} unused network${count === 1 ? "" : "s"}.`,
+      );
       isPruneModalOpen = false;
       await fetchNetworks(true);
     } catch (err: unknown) {
       if (err instanceof Error) {
-        showFeedback('error', `Failed to prune networks: ${err.message}`);
+        showFeedback("error", `Failed to prune networks: ${err.message}`);
       } else {
-        showFeedback('error', 'Failed to prune networks.');
+        showFeedback("error", "Failed to prune networks.");
       }
     } finally {
       isPruning = false;
@@ -263,18 +288,23 @@
   <!-- Top Header Banner -->
   <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
     <div class="flex items-center gap-3">
-      <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-violet-600/30 to-indigo-700/20 border border-violet-500/40 flex items-center justify-center text-violet-400 shadow-[0_0_20px_rgba(124,58,237,0.3)]">
+      <div
+        class="w-10 h-10 rounded-2xl bg-gradient-to-br from-violet-600/30 to-indigo-700/20 border border-violet-500/40 flex items-center justify-center text-violet-400 shadow-[0_0_20px_rgba(124,58,237,0.3)]"
+      >
         <NetworkIcon class="w-5 h-5" />
       </div>
       <div>
         <div class="flex items-center gap-2">
           <h1 class="text-xl font-bold tracking-tight text-white">Networks</h1>
-          <span class="px-2 py-0.5 text-[10px] font-mono rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/30 font-semibold">
+          <span
+            class="px-2 py-0.5 text-[10px] font-mono rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/30 font-semibold"
+          >
             {networks.length}
           </span>
         </div>
         <p class="text-xs text-slate-400">
-          Docker virtual bridges, host interfaces, and container inter-communication topologies
+          Docker virtual bridges, host interfaces, and container
+          inter-communication topologies
         </p>
       </div>
     </div>
@@ -282,7 +312,7 @@
     <!-- Header Actions -->
     <div class="flex items-center gap-2.5">
       <button
-        onclick={() => isPruneModalOpen = true}
+        onclick={() => (isPruneModalOpen = true)}
         class="px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 hover:text-white border border-white/[0.08] text-xs font-medium transition flex items-center gap-2"
         title="Prune unused networks"
       >
@@ -297,11 +327,13 @@
         title="Refresh network list"
         aria-label="Refresh networks"
       >
-        <RefreshCw class="w-4 h-4 {isRefreshing ? 'animate-spin text-violet-400' : ''}" />
+        <RefreshCw
+          class="w-4 h-4 {isRefreshing ? 'animate-spin text-violet-400' : ''}"
+        />
       </button>
 
       <button
-        onclick={() => isCreateModalOpen = true}
+        onclick={() => (isCreateModalOpen = true)}
         class="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold shadow-[0_0_20px_rgba(124,58,237,0.4)] transition flex items-center gap-2 group"
       >
         <Plus class="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
@@ -313,20 +345,21 @@
   <!-- Feedback Toast / Banner -->
   {#if feedback}
     <div
-      class="p-3.5 rounded-xl border flex items-center justify-between text-xs animate-in fade-in duration-200 {feedback.type === 'success'
+      class="p-3.5 rounded-xl border flex items-center justify-between text-xs animate-in fade-in duration-200 {feedback.type ===
+      'success'
         ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
         : 'bg-rose-500/10 border-rose-500/30 text-rose-300'}"
     >
       <div class="flex items-center gap-2">
-        {#if feedback.type === 'success'}
-          <CheckCircle2 class="w-4 h-4 text-emerald-400 shrink-0" />
+        {#if feedback.type === "success"}
+          <CircleCheck class="w-4 h-4 text-emerald-400 shrink-0" />
         {:else}
-          <AlertCircle class="w-4 h-4 text-rose-400 shrink-0" />
+          <CircleAlert class="w-4 h-4 text-rose-400 shrink-0" />
         {/if}
         <span>{feedback.message}</span>
       </div>
       <button
-        onclick={() => feedback = null}
+        onclick={() => (feedback = null)}
         class="p-1 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white"
         aria-label="Close notification"
       >
@@ -336,8 +369,10 @@
   {/if}
 
   {#if error}
-    <div class="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-3 text-rose-300">
-      <AlertCircle class="w-5 h-5 shrink-0 text-rose-400 mt-0.5" />
+    <div
+      class="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-3 text-rose-300"
+    >
+      <CircleAlert class="w-5 h-5 shrink-0 text-rose-400 mt-0.5" />
       <div>
         <h3 class="text-xs font-bold text-rose-200">Network Service Error</h3>
         <p class="text-xs mt-0.5">{error}</p>
@@ -347,67 +382,97 @@
 
   <!-- Stats Strip -->
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-    <div class="p-4 rounded-xl bg-[#12131c] border border-white/[0.08] flex items-center gap-3">
-      <div class="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400">
+    <div
+      class="p-4 rounded-xl bg-[#12131c] border border-white/[0.08] flex items-center gap-3"
+    >
+      <div
+        class="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400"
+      >
         <NetworkIcon class="w-4 h-4" />
       </div>
       <div>
-        <span class="text-[11px] text-slate-400 block font-mono">Total Networks</span>
-        <span class="text-lg font-bold text-white font-mono">{networks.length}</span>
+        <span class="text-[11px] text-slate-400 block font-mono"
+          >Total Networks</span
+        >
+        <span class="text-lg font-bold text-white font-mono"
+          >{networks.length}</span
+        >
       </div>
     </div>
 
-    <div class="p-4 rounded-xl bg-[#12131c] border border-white/[0.08] flex items-center gap-3">
-      <div class="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+    <div
+      class="p-4 rounded-xl bg-[#12131c] border border-white/[0.08] flex items-center gap-3"
+    >
+      <div
+        class="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400"
+      >
         <Globe class="w-4 h-4" />
       </div>
       <div>
-        <span class="text-[11px] text-slate-400 block font-mono">Bridge Networks</span>
+        <span class="text-[11px] text-slate-400 block font-mono"
+          >Bridge Networks</span
+        >
         <span class="text-lg font-bold text-cyan-400 font-mono">
-          {networks.filter(n => n.Driver === 'bridge').length}
+          {networks.filter((n) => n.Driver === "bridge").length}
         </span>
       </div>
     </div>
 
-    <div class="p-4 rounded-xl bg-[#12131c] border border-white/[0.08] flex items-center gap-3">
-      <div class="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+    <div
+      class="p-4 rounded-xl bg-[#12131c] border border-white/[0.08] flex items-center gap-3"
+    >
+      <div
+        class="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400"
+      >
         <Shield class="w-4 h-4" />
       </div>
       <div>
-        <span class="text-[11px] text-slate-400 block font-mono">System Networks</span>
+        <span class="text-[11px] text-slate-400 block font-mono"
+          >System Networks</span
+        >
         <span class="text-lg font-bold text-emerald-400 font-mono">
-          {networks.filter(n => isSystemNetwork(n)).length}
+          {networks.filter((n) => isSystemNetwork(n)).length}
         </span>
       </div>
     </div>
 
-    <div class="p-4 rounded-xl bg-[#12131c] border border-white/[0.08] flex items-center gap-3">
-      <div class="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+    <div
+      class="p-4 rounded-xl bg-[#12131c] border border-white/[0.08] flex items-center gap-3"
+    >
+      <div
+        class="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400"
+      >
         <Box class="w-4 h-4" />
       </div>
       <div>
-        <span class="text-[11px] text-slate-400 block font-mono">Custom Bridges</span>
+        <span class="text-[11px] text-slate-400 block font-mono"
+          >Custom Bridges</span
+        >
         <span class="text-lg font-bold text-amber-400 font-mono">
-          {networks.filter(n => !isSystemNetwork(n)).length}
+          {networks.filter((n) => !isSystemNetwork(n)).length}
         </span>
       </div>
     </div>
   </div>
 
-  <!-- Search & Filter Controls -->
-  <div class="p-3 rounded-2xl bg-[#12131c] border border-white/[0.08] flex flex-col md:flex-row items-center justify-between gap-3">
+  <!-- Search & Funnel Controls -->
+  <div
+    class="p-3 rounded-2xl bg-[#12131c] border border-white/[0.08] flex flex-col md:flex-row items-center justify-between gap-3"
+  >
     <!-- Search Bar -->
     <div class="relative w-full md:w-96">
-      <Search class="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+      <Search
+        class="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2"
+      />
       <input
         type="text"
         bind:value={searchQuery}
-        placeholder="Filter by network name, ID, driver, or subnet..."
+        placeholder="Funnel by network name, ID, driver, or subnet..."
         class="w-full pl-9 pr-8 py-2 rounded-xl bg-[#0c0d14] border border-white/10 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-violet-500 transition font-mono"
       />
       {#if searchQuery}
         <button
-          onclick={() => searchQuery = ''}
+          onclick={() => (searchQuery = "")}
           class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
           aria-label="Clear search"
         >
@@ -432,15 +497,22 @@
   </div>
 
   <!-- Networks Table Container -->
-  <div class="rounded-2xl bg-[#12131c] border border-white/[0.08] overflow-hidden shadow-xl">
+  <div
+    class="rounded-2xl bg-[#12131c] border border-white/[0.08] overflow-hidden shadow-xl"
+  >
     {#if isLoading}
-      <div class="p-12 flex flex-col items-center justify-center gap-3 text-slate-400">
-        <Loader2 class="w-7 h-7 text-violet-400 animate-spin" />
-        <span class="text-xs font-mono">Querying Docker Engine networks...</span>
+      <div
+        class="p-12 flex flex-col items-center justify-center gap-3 text-slate-400"
+      >
+        <LoaderCircle class="w-7 h-7 text-violet-400 animate-spin" />
+        <span class="text-xs font-mono">Querying Docker Engine networks...</span
+        >
       </div>
     {:else if filteredNetworks.length === 0}
       <div class="p-12 text-center space-y-3">
-        <div class="w-12 h-12 mx-auto rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-slate-500">
+        <div
+          class="w-12 h-12 mx-auto rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-slate-500"
+        >
           <NetworkIcon class="w-6 h-6" />
         </div>
         <h3 class="text-sm font-semibold text-white">No networks found</h3>
@@ -453,7 +525,7 @@
         </p>
         <div class="pt-2">
           <button
-            onclick={() => isCreateModalOpen = true}
+            onclick={() => (isCreateModalOpen = true)}
             class="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold shadow-[0_0_15px_rgba(124,58,237,0.35)] transition inline-flex items-center gap-2"
           >
             <Plus class="w-3.5 h-3.5" />
@@ -465,7 +537,9 @@
       <div class="overflow-x-auto">
         <table class="w-full text-left border-collapse text-xs">
           <thead>
-            <tr class="border-b border-white/[0.08] bg-[#0c0d14]/60 text-slate-400 font-mono text-[11px] uppercase tracking-wider">
+            <tr
+              class="border-b border-white/[0.08] bg-[#0c0d14]/60 text-slate-400 font-mono text-[11px] uppercase tracking-wider"
+            >
               <th class="py-3 px-4 font-semibold">Network Name</th>
               <th class="py-3 px-4 font-semibold">Network ID</th>
               <th class="py-3 px-4 font-semibold">Driver</th>
@@ -486,19 +560,27 @@
                 <!-- Name -->
                 <td class="py-3 px-4">
                   <div class="flex items-center gap-2.5">
-                    <div class="w-8 h-8 rounded-xl bg-[#090a0f] border border-white/[0.08] flex items-center justify-center text-slate-400 group-hover:text-violet-400 group-hover:border-violet-500/30 transition shrink-0">
+                    <div
+                      class="w-8 h-8 rounded-xl bg-[#090a0f] border border-white/[0.08] flex items-center justify-center text-slate-400 group-hover:text-violet-400 group-hover:border-violet-500/30 transition shrink-0"
+                    >
                       <NetworkIcon class="w-4 h-4" />
                     </div>
                     <div class="min-w-0">
-                      <div class="flex items-center gap-2 font-mono font-semibold text-white tracking-wide">
+                      <div
+                        class="flex items-center gap-2 font-mono font-semibold text-white tracking-wide"
+                      >
                         <span class="truncate">{net.Name}</span>
                         {#if isSystem}
-                          <span class="px-1.5 py-0.2 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-[10px] font-mono">
+                          <span
+                            class="px-1.5 py-0.2 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-[10px] font-mono"
+                          >
                             system
                           </span>
                         {/if}
                         {#if net.Internal}
-                          <span class="px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[10px] font-mono">
+                          <span
+                            class="px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[10px] font-mono"
+                          >
                             internal
                           </span>
                         {/if}
@@ -508,11 +590,16 @@
                 </td>
 
                 <!-- ID -->
-                <td class="py-3 px-4 font-mono text-slate-300 whitespace-nowrap">
+                <td
+                  class="py-3 px-4 font-mono text-slate-300 whitespace-nowrap"
+                >
                   <div class="flex items-center gap-1.5">
-                    <span class="text-violet-300 font-semibold">{getShortId(net.Id)}</span>
+                    <span class="text-violet-300 font-semibold"
+                      >{getShortId(net.Id)}</span
+                    >
                     <button
-                      onclick={() => copyToClipboard(net.Id, `net-id-${net.Id}`)}
+                      onclick={() =>
+                        copyToClipboard(net.Id, `net-id-${net.Id}`)}
                       class="p-1 rounded hover:bg-white/10 text-slate-500 hover:text-white transition"
                       title="Copy full network ID"
                       aria-label="Copy full network ID"
@@ -528,18 +615,24 @@
 
                 <!-- Driver -->
                 <td class="py-3 px-4 whitespace-nowrap">
-                  <span class="px-2 py-0.5 rounded-md border font-mono text-[10px] {driverStyle.badge}">
+                  <span
+                    class="px-2 py-0.5 rounded-md border font-mono text-[10px] {driverStyle.badge}"
+                  >
                     {driverStyle.text}
                   </span>
                 </td>
 
                 <!-- Subnet / Gateway -->
-                <td class="py-3 px-4 font-mono text-slate-300 whitespace-nowrap">
-                  {#if ipam.subnet !== '—'}
+                <td
+                  class="py-3 px-4 font-mono text-slate-300 whitespace-nowrap"
+                >
+                  {#if ipam.subnet !== "—"}
                     <div class="flex flex-col">
                       <span class="text-white font-medium">{ipam.subnet}</span>
-                      {#if ipam.gateway !== '—'}
-                        <span class="text-[10px] text-slate-500">gw: {ipam.gateway}</span>
+                      {#if ipam.gateway !== "—"}
+                        <span class="text-[10px] text-slate-500"
+                          >gw: {ipam.gateway}</span
+                        >
                       {/if}
                     </div>
                   {:else}
@@ -548,8 +641,10 @@
                 </td>
 
                 <!-- Scope -->
-                <td class="py-3 px-4 font-mono text-slate-400 whitespace-nowrap">
-                  <span class="text-slate-300">{net.Scope || 'local'}</span>
+                <td
+                  class="py-3 px-4 font-mono text-slate-400 whitespace-nowrap"
+                >
+                  <span class="text-slate-300">{net.Scope || "local"}</span>
                 </td>
 
                 <!-- Attached -->
@@ -560,8 +655,11 @@
                       onclick={() => toggleExpand(net.Id)}
                       class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/20 font-mono text-[10px] transition"
                     >
-                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                      {attached.length} container{attached.length === 1 ? '' : 's'}
+                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"
+                      ></span>
+                      {attached.length} container{attached.length === 1
+                        ? ""
+                        : "s"}
                       {#if isExpanded}
                         <ChevronUp class="w-3 h-3 ml-0.5" />
                       {:else}
@@ -569,7 +667,9 @@
                       {/if}
                     </button>
                   {:else}
-                    <span class="text-slate-500 font-mono text-[11px]">0 containers</span>
+                    <span class="text-slate-500 font-mono text-[11px]"
+                      >0 containers</span
+                    >
                   {/if}
                 </td>
 
@@ -580,7 +680,7 @@
                       class="p-1.5 rounded-lg text-slate-600 cursor-not-allowed inline-block"
                       title="System default networks cannot be deleted"
                     >
-                      <Trash2 class="w-3.5 h-3.5 opacity-40" />
+                      <Trash class="w-3.5 h-3.5 opacity-40" />
                     </span>
                   {:else}
                     <button
@@ -589,7 +689,7 @@
                       title="Delete network"
                       aria-label="Delete network"
                     >
-                      <Trash2 class="w-3.5 h-3.5" />
+                      <Trash class="w-3.5 h-3.5" />
                     </button>
                   {/if}
                 </td>
@@ -600,19 +700,31 @@
                 <tr class="bg-[#0c0d14]/80 border-b border-white/[0.04]">
                   <td colspan="7" class="py-3 px-6">
                     <div class="space-y-2">
-                      <span class="text-[11px] font-mono text-slate-400 font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                      <span
+                        class="text-[11px] font-mono text-slate-400 font-semibold uppercase tracking-wider flex items-center gap-1.5"
+                      >
                         <Box class="w-3.5 h-3.5 text-cyan-400" />
                         Attached Containers in {net.Name}
                       </span>
-                      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                      <div
+                        class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2"
+                      >
                         {#each attached as item}
-                          <div class="p-2 rounded-xl bg-[#12131c] border border-white/[0.06] flex items-center justify-between font-mono text-[11px]">
+                          <div
+                            class="p-2 rounded-xl bg-[#12131c] border border-white/[0.06] flex items-center justify-between font-mono text-[11px]"
+                          >
                             <div class="flex items-center gap-2 min-w-0">
-                              <Box class="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                              <span class="text-white font-medium truncate">{item.name}</span>
+                              <Box
+                                class="w-3.5 h-3.5 text-slate-500 shrink-0"
+                              />
+                              <span class="text-white font-medium truncate"
+                                >{item.name}</span
+                              >
                             </div>
-                            <div class="text-right text-[10px] text-cyan-300 font-semibold shrink-0 ml-2">
-                              {item.ipv4 || 'auto'}
+                            <div
+                              class="text-right text-[10px] text-cyan-300 font-semibold shrink-0 ml-2"
+                            >
+                              {item.ipv4 || "auto"}
                             </div>
                           </div>
                         {/each}
@@ -632,9 +744,9 @@
 <!-- Create Network Modal -->
 <CreateNetworkModal
   isOpen={isCreateModalOpen}
-  onClose={() => isCreateModalOpen = false}
+  onClose={() => (isCreateModalOpen = false)}
   onCreated={(netId) => {
-    showFeedback('success', `Network created successfully.`);
+    showFeedback("success", `Network created successfully.`);
     fetchNetworks(true);
   }}
 />
@@ -661,11 +773,18 @@
       class="relative w-full max-w-md rounded-2xl bg-[#12131c] border border-white/[0.12] shadow-[0_10px_50px_rgba(0,0,0,0.8)] overflow-hidden p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150"
     >
       <div class="flex items-center gap-3">
-        <div class="w-9 h-9 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 shadow-[0_0_15px_rgba(244,63,94,0.3)]">
-          <Trash2 class="w-4 h-4" />
+        <div
+          class="w-9 h-9 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 shadow-[0_0_15px_rgba(244,63,94,0.3)]"
+        >
+          <Trash class="w-4 h-4" />
         </div>
         <div>
-          <h2 id="delete-network-modal-title" class="text-sm font-bold text-white">Delete Docker Network</h2>
+          <h2
+            id="delete-network-modal-title"
+            class="text-sm font-bold text-white"
+          >
+            Delete Docker Network
+          </h2>
           <p class="text-[11px] text-slate-400 font-mono truncate max-w-xs">
             {deleteNetworkTarget.Name} ({getShortId(deleteNetworkTarget.Id)})
           </p>
@@ -673,24 +792,35 @@
       </div>
 
       {#if attached.length > 0}
-        <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2 text-amber-300 text-xs">
-          <AlertTriangle class="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+        <div
+          class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2 text-amber-300 text-xs"
+        >
+          <TriangleAlert class="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
           <div>
             <span>
-              This network currently has <strong>{attached.length} active endpoint{attached.length === 1 ? '' : 's'}</strong> connected.
+              This network currently has <strong
+                >{attached.length} active endpoint{attached.length === 1
+                  ? ""
+                  : "s"}</strong
+              > connected.
             </span>
             <span class="block mt-1 text-[11px] text-amber-400">
-              Docker will fail to delete this network until all containers disconnect from it.
+              Docker will fail to delete this network until all containers
+              disconnect from it.
             </span>
           </div>
         </div>
       {/if}
 
       <p class="text-xs text-slate-300 leading-relaxed">
-        Are you sure you want to remove network <strong class="text-white font-mono">{deleteNetworkTarget.Name}</strong>?
+        Are you sure you want to remove network <strong
+          class="text-white font-mono">{deleteNetworkTarget.Name}</strong
+        >?
       </p>
 
-      <div class="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
+      <div
+        class="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]"
+      >
         <button
           type="button"
           onclick={closeDeleteModal}
@@ -706,10 +836,10 @@
           class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-[0_0_15px_rgba(244,63,94,0.35)] transition flex items-center gap-2"
         >
           {#if isDeleting}
-            <Loader2 class="w-3.5 h-3.5 animate-spin" />
+            <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
             Deleting...
           {:else}
-            <Trash2 class="w-3.5 h-3.5" />
+            <Trash class="w-3.5 h-3.5" />
             Delete Network
           {/if}
         </button>
@@ -730,7 +860,7 @@
     <button
       type="button"
       class="fixed inset-0 bg-black/80 backdrop-blur-md cursor-default border-0"
-      onclick={() => isPruneModalOpen = false}
+      onclick={() => (isPruneModalOpen = false)}
       aria-label="Close modal backdrop"
       tabindex="-1"
     ></button>
@@ -739,24 +869,39 @@
       class="relative w-full max-w-md rounded-2xl bg-[#12131c] border border-white/[0.12] shadow-[0_10px_50px_rgba(0,0,0,0.8)] overflow-hidden p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150"
     >
       <div class="flex items-center gap-3">
-        <div class="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.3)]">
+        <div
+          class="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.3)]"
+        >
           <Scissors class="w-4 h-4" />
         </div>
         <div>
-          <h2 id="prune-networks-modal-title" class="text-sm font-bold text-white">Prune Unused Networks</h2>
-          <p class="text-[11px] text-slate-400">Clean up unreferenced Docker networks</p>
+          <h2
+            id="prune-networks-modal-title"
+            class="text-sm font-bold text-white"
+          >
+            Prune Unused Networks
+          </h2>
+          <p class="text-[11px] text-slate-400">
+            Clean up unreferenced Docker networks
+          </p>
         </div>
       </div>
 
       <p class="text-xs text-slate-300 leading-relaxed">
-        This will remove all custom Docker networks that are not currently used by at least one container. 
-        Pre-defined system networks (<code class="text-cyan-300 font-mono">bridge</code>, <code class="text-cyan-300 font-mono">host</code>, <code class="text-cyan-300 font-mono">none</code>) will never be removed.
+        This will remove all custom Docker networks that are not currently used
+        by at least one container. Pre-defined system networks (<code
+          class="text-cyan-300 font-mono">bridge</code
+        >, <code class="text-cyan-300 font-mono">host</code>,
+        <code class="text-cyan-300 font-mono">none</code>) will never be
+        removed.
       </p>
 
-      <div class="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
+      <div
+        class="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]"
+      >
         <button
           type="button"
-          onclick={() => isPruneModalOpen = false}
+          onclick={() => (isPruneModalOpen = false)}
           disabled={isPruning}
           class="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-medium transition"
         >
@@ -769,7 +914,7 @@
           class="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold shadow-[0_0_15px_rgba(245,158,11,0.35)] transition flex items-center gap-2"
         >
           {#if isPruning}
-            <Loader2 class="w-3.5 h-3.5 animate-spin" />
+            <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
             Pruning...
           {:else}
             <Scissors class="w-3.5 h-3.5" />

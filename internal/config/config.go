@@ -3,10 +3,11 @@ package config
 import (
 	"flag"
 	"os"
+	"path/filepath"
 	"strconv"
 )
 
-var Version = "0.2.0"
+var Version = "0.2.1"
 
 type Config struct {
 	Host        string
@@ -16,16 +17,20 @@ type Config struct {
 	NoAuth      bool
 	JWTSecret   string
 	ShowVersion bool
+	AuthLogPath string
+	LogLevel    string
 }
 
 func Load() (*Config, error) {
 	cfg := &Config{
-		Host:       getEnv("PDSWARM_HOST", "0.0.0.0"),
-		Port:       getEnvInt("PDSWARM_PORT", 9000),
-		SocketPath: getEnv("DOCKER_HOST", "/var/run/docker.sock"),
-		DataDir:    getEnv("PDSWARM_DATA_DIR", "./data"),
-		NoAuth:     getEnvBool("PDSWARM_NO_AUTH", false),
-		JWTSecret:  getEnv("PDSWARM_JWT_SECRET", ""),
+		Host:        getEnv("PDSWARM_HOST", "0.0.0.0"),
+		Port:        getEnvInt("PDSWARM_PORT", 9000),
+		SocketPath:  getEnv("DOCKER_HOST", "/var/run/docker.sock"),
+		DataDir:     getEnv("PDSWARM_DATA_DIR", "./data"),
+		NoAuth:      getEnvBool("PDSWARM_NO_AUTH", false),
+		JWTSecret:   getEnv("PDSWARM_JWT_SECRET", ""),
+		AuthLogPath: getEnv("PDSWARM_AUTH_LOG", ""),
+		LogLevel:    getEnv("PDSWARM_LOG_LEVEL", "auth"),
 	}
 
 	flag.StringVar(&cfg.Host, "host", cfg.Host, "Host to bind HTTP server")
@@ -34,11 +39,17 @@ func Load() (*Config, error) {
 	flag.StringVar(&cfg.DataDir, "data-dir", cfg.DataDir, "Data directory for bbolt database")
 	flag.BoolVar(&cfg.NoAuth, "no-auth", cfg.NoAuth, "Disable authentication checks")
 	flag.StringVar(&cfg.JWTSecret, "jwt-secret", cfg.JWTSecret, "JWT signing secret (generated if empty)")
+	flag.StringVar(&cfg.AuthLogPath, "auth-log", cfg.AuthLogPath, "Path to security/auth audit log file for fail2ban / jails")
+	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "Audit log level: auth, failures_only, all, or off")
 	flag.BoolVar(&cfg.ShowVersion, "version", false, "Print version and exit")
 	flag.BoolVar(&cfg.ShowVersion, "v", false, "Print version and exit (shorthand)")
 
 	if !flag.Parsed() {
 		flag.Parse()
+	}
+
+	if cfg.AuthLogPath == "" {
+		cfg.AuthLogPath = filepath.Join(cfg.DataDir, "auth.log")
 	}
 
 	return cfg, nil

@@ -4,13 +4,13 @@
     Download,
     Cpu,
     Layers,
-    CheckCircle2,
-    AlertCircle,
+    CircleCheck,
+    CircleAlert,
     XCircle,
     Clock,
     Terminal,
     X,
-    Loader2,
+    LoaderCircle,
   } from '@lucide/svelte';
   import { tasksStore } from '../stores/tasks.svelte';
   import TaskLogsModal from './TaskLogsModal.svelte';
@@ -96,7 +96,7 @@
                     {task.title}
                   </h4>
                   <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
-                    <Loader2 class="w-3 h-3 animate-spin" />
+                    <LoaderCircle class="w-3 h-3 animate-spin" />
                     Running ({task.progress}%)
                   </span>
                 </div>
@@ -148,9 +148,9 @@
           <div class="px-5 py-3 flex items-center justify-between gap-3 text-xs hover:bg-white/[0.02] transition">
             <div class="flex items-center gap-3 min-w-0">
               {#if task.status === 'completed'}
-                <CheckCircle2 class="w-4 h-4 text-emerald-400 shrink-0" />
+                <CircleCheck class="w-4 h-4 text-emerald-400 shrink-0" />
               {:else if task.status === 'failed'}
-                <AlertCircle class="w-4 h-4 text-rose-400 shrink-0" />
+                <CircleAlert class="w-4 h-4 text-rose-400 shrink-0" />
               {:else}
                 <XCircle class="w-4 h-4 text-slate-500 shrink-0" />
               {/if}

@@ -15,11 +15,14 @@ DEFAULT_DATA_DIR="/var/lib/pdswarm"
 DEFAULT_PORT="9000"
 DEFAULT_HOST="0.0.0.0"
 DOCKER_SOCK="/var/run/docker.sock"
+DEFAULT_LOG_LEVEL="auth"
 
 # Options
 PORT="${PORT:-$DEFAULT_PORT}"
 HOST="${HOST:-$DEFAULT_HOST}"
 DATA_DIR="${DATA_DIR:-$DEFAULT_DATA_DIR}"
+AUTH_LOG="${AUTH_LOG:-}"
+LOG_LEVEL="${LOG_LEVEL:-$DEFAULT_LOG_LEVEL}"
 ENABLE_AUTO_UPDATE=true
 LOCAL_INSTALL=false
 DRY_RUN=false
@@ -58,6 +61,14 @@ while [[ $# -gt 0 ]]; do
       DOCKER_SOCK="$2"
       shift 2
       ;;
+    --auth-log)
+      AUTH_LOG="$2"
+      shift 2
+      ;;
+    --log-level)
+      LOG_LEVEL="$2"
+      shift 2
+      ;;
     --no-auto-update)
       ENABLE_AUTO_UPDATE=false
       shift
@@ -83,6 +94,8 @@ while [[ $# -gt 0 ]]; do
       echo "  --host <host>        Host to bind PDSwarm (default: 0.0.0.0)"
       echo "  --data-dir <path>    Data directory (default: /var/lib/pdswarm)"
       echo "  --socket <path>      Container engine socket (default: /var/run/docker.sock or /run/podman/podman.sock)"
+      echo "  --auth-log <path>    Path to security/auth audit log file for fail2ban (default: <data-dir>/auth.log)"
+      echo "  --log-level <level>  Audit log level: auth, failures_only, or off (default: auth)"
       echo "  --no-auto-update     Disable daily auto-update timer"
       echo "  --local              Install from local ./pdswarm binary instead of GitHub"
       echo "  --dry-run            Simulate installation without making system changes"
@@ -256,10 +269,22 @@ fi
 INSTALLED_VER="$("${INSTALL_BIN}" -version 2>/dev/null || echo "PDSwarm")"
 log_success "Installed ${INSTALLED_VER} to ${INSTALL_BIN}"
 
-# Step 2: Create Data Directory
+# Normalize audit log path
+if [[ -z "${AUTH_LOG}" ]]; then
+  AUTH_LOG="${DATA_DIR}/auth.log"
+fi
+LOG_DIR="$(dirname "${AUTH_LOG}")"
+
+# Step 2: Create Data & Log Directories
 log_info "Creating data directory at ${DATA_DIR}..."
 mkdir -p "${DATA_DIR}"
 chmod 0750 "${DATA_DIR}"
+
+if [[ -n "${LOG_DIR}" && ! -d "${LOG_DIR}" ]]; then
+  log_info "Creating log directory at ${LOG_DIR}..."
+  mkdir -p "${LOG_DIR}"
+  chmod 0750 "${LOG_DIR}"
+fi
 
 # Step 3: Install Systemd Service
 log_info "Configuring systemd service (${SERVICE_NAME})..."
@@ -274,7 +299,7 @@ Wants=network-online.target docker.service podman.socket
 Type=simple
 User=root
 WorkingDirectory=${DATA_DIR}
-ExecStart=${INSTALL_BIN} -data-dir ${DATA_DIR} -host ${HOST} -port ${PORT} -socket ${DOCKER_SOCK}
+ExecStart=${INSTALL_BIN} -data-dir ${DATA_DIR} -host ${HOST} -port ${PORT} -socket ${DOCKER_SOCK} -auth-log ${AUTH_LOG} -log-level ${LOG_LEVEL}
 Restart=always
 RestartSec=5s
 LimitNOFILE=65535
@@ -282,7 +307,7 @@ LimitNOFILE=65535
 # Process hardening
 ProtectSystem=full
 ProtectHome=true
-ReadWritePaths=${DATA_DIR}
+ReadWritePaths=${DATA_DIR} ${LOG_DIR}
 
 [Install]
 WantedBy=multi-user.target
@@ -393,6 +418,8 @@ echo -e "  ${BOLD}Web UI:${NC}              ${CYAN}http://${HOST_IP}:${PORT}${NC
 echo -e "  ${BOLD}Service Status:${NC}      sudo systemctl status ${SERVICE_NAME}"
 echo -e "  ${BOLD}Live Logs:${NC}           sudo journalctl -u ${SERVICE_NAME} -f"
 echo -e "  ${BOLD}Data Directory:${NC}      ${DATA_DIR}"
+echo -e "  ${BOLD}Security Audit Log:${NC}  ${AUTH_LOG} (Level: ${LOG_LEVEL})"
+echo -e "  ${BOLD}Fail2ban Jails:${NC}      Ready (View filters & jails in Settings -> General)"
 if [[ "${ENABLE_AUTO_UPDATE}" == "true" ]]; then
   echo -e "  ${BOLD}Auto-Updates:${NC}        Enabled (daily via ${TIMER_NAME})"
   echo -e "  ${BOLD}Manual Update:${NC}       sudo ${UPDATER_BIN}"

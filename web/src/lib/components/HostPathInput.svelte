@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { Folder, HardDrive, Loader2, FolderOpen, CornerDownLeft } from '@lucide/svelte';
+  import {
+    Folder,
+    HardDrive,
+    LoaderCircle,
+    FolderOpen,
+    CornerDownLeft,
+  } from '@lucide/svelte';
   import { systemApi } from '../api';
   import type { HostPathSuggestion } from '../types';
 
@@ -129,7 +135,7 @@
 
     <div class="absolute right-2 flex items-center pointer-events-none text-slate-500">
       {#if isLoading}
-        <Loader2 class="w-3.5 h-3.5 animate-spin text-cyan-400" />
+        <LoaderCircle class="w-3.5 h-3.5 animate-spin text-cyan-400" />
       {:else}
         <FolderOpen class="w-3.5 h-3.5 opacity-40" />
       {/if}
@@ -143,7 +149,7 @@
     >
       {#if isLoading && suggestions.length === 0}
         <div class="p-3 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
-          <Loader2 class="w-3.5 h-3.5 animate-spin text-cyan-400" />
+          <LoaderCircle class="w-3.5 h-3.5 animate-spin text-cyan-400" />
           <span>Scanning host folders...</span>
         </div>
       {:else}

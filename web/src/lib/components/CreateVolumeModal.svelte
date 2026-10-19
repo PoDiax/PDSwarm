@@ -3,10 +3,10 @@
     X,
     HardDrive,
     Plus,
-    Trash2,
-    CheckCircle2,
-    AlertCircle,
-    Loader2,
+    Trash,
+    CircleCheck,
+    CircleAlert,
+    LoaderCircle,
     Tag,
   } from '@lucide/svelte';
   import { volumeApi } from '../api';
@@ -159,7 +159,7 @@
       <form onsubmit={handleSubmit} class="p-6 space-y-5 text-xs">
         {#if error}
           <div class="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-2.5 text-rose-300 animate-in fade-in">
-            <AlertCircle class="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+            <CircleAlert class="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
             <div class="flex-1 leading-relaxed">
               <span class="font-semibold block">Volume Creation Error</span>
               <span class="text-[11px]">{error}</span>
@@ -241,7 +241,7 @@
                     class="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition"
                     aria-label="Remove label"
                   >
-                    <Trash2 class="w-3.5 h-3.5" />
+                    <Trash class="w-3.5 h-3.5" />
                   </button>
                 </div>
               {/each}
@@ -265,7 +265,7 @@
             class="px-5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold shadow-[0_0_15px_rgba(124,58,237,0.35)] transition flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {#if isSubmitting}
-              <Loader2 class="w-3.5 h-3.5 animate-spin" />
+              <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
               Creating Volume...
             {:else}
               <Plus class="w-3.5 h-3.5" />

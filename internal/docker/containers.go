@@ -25,6 +25,7 @@ type CreateContainerRequest struct {
 	Labels        map[string]string `json:"labels"`
 	LogDriver     string            `json:"log_driver,omitempty"`
 	LogOpts       map[string]string `json:"log_opts,omitempty"`
+	AutoStart     *bool             `json:"auto_start,omitempty"`
 }
 
 type PortMapping struct {

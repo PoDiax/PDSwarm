@@ -3,13 +3,13 @@
     X,
     Disc,
     Download,
-    CheckCircle2,
-    AlertCircle,
-    Loader2,
+    CircleCheck,
+    CircleAlert,
+    LoaderCircle,
     Layers,
     Terminal,
     Sparkles,
-    Trash2,
+    Trash,
     Key,
     Minimize2,
   } from '@lucide/svelte';
@@ -264,7 +264,7 @@
       <div class="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
         {#if error}
           <div class="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-2.5 text-rose-300 animate-in fade-in">
-            <AlertCircle class="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+            <CircleAlert class="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
             <div class="flex-1 leading-relaxed">
               <span class="font-semibold block">Pull Error</span>
               <span class="text-[11px]">{error}</span>
@@ -275,7 +275,7 @@
         {#if isSuccess}
           <div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-2.5 text-emerald-300 animate-in fade-in">
             <div class="flex items-center gap-2">
-              <CheckCircle2 class="w-4 h-4 shrink-0 text-emerald-400" />
+              <CircleCheck class="w-4 h-4 shrink-0 text-emerald-400" />
               <span class="text-xs font-semibold">Image pulled successfully and ready to use!</span>
             </div>
             <button
@@ -385,7 +385,7 @@
               class="px-5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold shadow-[0_0_15px_rgba(124,58,237,0.35)] transition flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {#if isPulling}
-                <Loader2 class="w-3.5 h-3.5 animate-spin" />
+                <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
                 Pulling Image...
               {:else}
                 <Download class="w-3.5 h-3.5" />

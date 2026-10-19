@@ -1,12 +1,14 @@
 <script lang="ts">
-  import { tick, onDestroy } from 'svelte';
+  import {
+    tick,
+    onDestroy } from 'svelte';
   import {
     X,
     Hammer,
     Sparkles,
-    CheckCircle2,
-    AlertCircle,
-    Loader2,
+    CircleCheck,
+    CircleAlert,
+    LoaderCircle,
     Terminal,
     ArrowDown,
     Copy,
@@ -523,7 +525,7 @@ CMD ["nginx", "-g", "daemon off;"]
       {#if errorMessage}
         <div class="px-5 py-2 bg-rose-500/10 border-b border-rose-500/25 flex items-center justify-between text-xs text-rose-300 shrink-0">
           <div class="flex items-center gap-2 truncate">
-            <AlertCircle class="w-4 h-4 text-rose-400 shrink-0" />
+            <CircleAlert class="w-4 h-4 text-rose-400 shrink-0" />
             <span class="truncate">{errorMessage}</span>
           </div>
           <button
@@ -639,17 +641,17 @@ CMD ["nginx", "-g", "daemon off;"]
               <!-- Status Badge -->
               {#if buildStatus === 'building'}
                 <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-violet-500/20 text-violet-300 border border-violet-500/30 flex items-center gap-1.5 animate-pulse">
-                  <Loader2 class="w-2.5 h-2.5 animate-spin" />
+                  <LoaderCircle class="w-2.5 h-2.5 animate-spin" />
                   Building ({buildDuration}s)
                 </span>
               {:else if buildStatus === 'success'}
                 <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                  <CheckCircle2 class="w-2.5 h-2.5 text-emerald-400" />
+                  <CircleCheck class="w-2.5 h-2.5 text-emerald-400" />
                   Success ({buildDuration}s)
                 </span>
               {:else if buildStatus === 'error'}
                 <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30 flex items-center gap-1">
-                  <AlertCircle class="w-2.5 h-2.5 text-rose-400" />
+                  <CircleAlert class="w-2.5 h-2.5 text-rose-400" />
                   Failed
                 </span>
               {:else}

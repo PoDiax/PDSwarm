@@ -4,10 +4,10 @@
     Terminal,
     Copy,
     Check,
-    Loader2,
+    LoaderCircle,
     RefreshCw,
     Download,
-    Trash2,
+    Trash,
   } from '@lucide/svelte';
   import { portal } from '../actions/portal';
   import { taskApi } from '../api';

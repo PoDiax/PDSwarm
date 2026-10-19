@@ -1,18 +1,17 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import {
+    onMount } from "svelte";
   import {
     Boxes,
     Search,
     X,
     RefreshCw,
-    Filter,
-    Rocket,
-    AlertCircle,
-    CheckCircle2,
-    Loader2,
+    Funnel,
+    CircleAlert,
+    CircleCheck,
+    LoaderCircle,
     Layers,
     Sparkles,
-    ExternalLink,
     ChevronLeft,
     ChevronRight,
     ChevronsLeft,
@@ -20,10 +19,10 @@
     LayoutGrid,
     Infinity as InfinityIcon,
   } from '@lucide/svelte';
-  import TemplateCard from '../lib/components/TemplateCard.svelte';
-  import TemplateDeployModal from '../lib/components/TemplateDeployModal.svelte';
-  import { templateApi } from '../lib/api';
-  import type { Template } from '../lib/types';
+  import TemplateCard from "../lib/components/TemplateCard.svelte";
+  import TemplateDeployModal from "../lib/components/TemplateDeployModal.svelte";
+  import { templateApi } from "../lib/api";
+  import type { Template } from "../lib/types";
 
   interface Props {
     onNavigate?: (tab: string) => void;
@@ -42,15 +41,15 @@
   let error = $state<string | null>(null);
 
   // Filters
-  let searchQuery = $state('');
-  let selectedCategory = $state('All');
-  let selectedSource = $state('All Sources');
+  let searchQuery = $state("");
+  let selectedCategory = $state("All");
+  let selectedSource = $state("All Sources");
 
   // Pagination & Display Mode
   let currentPage = $state(1);
   let pageSize = $state(24);
   const pageSizeOptions = [12, 24, 48, 96];
-  let viewMode = $state<'paged' | 'infinite'>('paged');
+  let viewMode = $state<"paged" | "infinite">("paged");
   let infiniteLimit = $state(24);
   let isLoadingMore = $state(false);
   let appsBoxElement = $state<HTMLElement | null>(null);
@@ -58,9 +57,11 @@
 
   // Modals & Notifications
   let deployingTemplate = $state<Template | null>(null);
-  let notification = $state<{ type: 'success' | 'error'; message: string; stackName?: string } | null>(
-    null
-  );
+  let notification = $state<{
+    type: "success" | "error";
+    message: string;
+    stackName?: string;
+  } | null>(null);
 
   async function loadTemplates(isRefresh = false) {
     if (isRefresh) {
@@ -78,7 +79,7 @@
       sources = res.sources || [];
     } catch (err: unknown) {
       const e = err as { message?: string };
-      error = e?.message || 'Failed to load application templates.';
+      error = e?.message || "Failed to load application templates.";
     } finally {
       isLoading = false;
       isRefreshing = false;
@@ -93,15 +94,16 @@
   const filteredTemplates = $derived(
     templates.filter((tmpl) => {
       // Source match
-      if (selectedSource !== 'All Sources') {
-        const tmplSrc = tmpl.source || 'curated';
-        if (tmplSrc.toLowerCase() !== selectedSource.toLowerCase()) return false;
+      if (selectedSource !== "All Sources") {
+        const tmplSrc = tmpl.source || "curated";
+        if (tmplSrc.toLowerCase() !== selectedSource.toLowerCase())
+          return false;
       }
 
       // Category match
-      if (selectedCategory !== 'All') {
+      if (selectedCategory !== "All") {
         const matchesCategory = tmpl.categories?.some(
-          (c) => c.toLowerCase() === selectedCategory.toLowerCase()
+          (c) => c.toLowerCase() === selectedCategory.toLowerCase(),
         );
         if (!matchesCategory) return false;
       }
@@ -118,7 +120,7 @@
       }
 
       return true;
-    })
+    }),
   );
 
   // Derived pagination & display metrics
@@ -135,7 +137,7 @@
     currentPage = 1;
     infiniteLimit = pageSize;
     if (appsBoxElement) {
-      appsBoxElement.scrollTo({ top: 0, behavior: 'instant' });
+      appsBoxElement.scrollTo({ top: 0, behavior: "instant" });
     }
   });
 
@@ -143,9 +145,9 @@
   const endIndex = $derived(Math.min(startIndex + pageSize, totalFiltered));
 
   const displayedTemplates = $derived(
-    viewMode === 'paged'
+    viewMode === "paged"
       ? filteredTemplates.slice(startIndex, endIndex)
-      : filteredTemplates.slice(0, infiniteLimit)
+      : filteredTemplates.slice(0, infiniteLimit),
   );
 
   const hasMoreInfinite = $derived(infiniteLimit < totalFiltered);
@@ -162,7 +164,7 @@
     const end = Math.min(totalPages - 1, currentPage + 1);
 
     if (start > 2) {
-      pages.push('...');
+      pages.push("...");
     }
 
     for (let i = start; i <= end; i++) {
@@ -170,7 +172,7 @@
     }
 
     if (end < totalPages - 1) {
-      pages.push('...');
+      pages.push("...");
     }
 
     pages.push(totalPages);
@@ -181,7 +183,7 @@
     if (page < 1 || page > totalPages) return;
     currentPage = page;
     if (appsBoxElement) {
-      appsBoxElement.scrollTo({ top: 0, behavior: 'smooth' });
+      appsBoxElement.scrollTo({ top: 0, behavior: "smooth" });
     }
   }
 
@@ -195,7 +197,7 @@
   }
 
   function handleBoxScroll(e: Event) {
-    if (viewMode !== 'infinite' || isLoadingMore || !hasMoreInfinite) return;
+    if (viewMode !== "infinite" || isLoadingMore || !hasMoreInfinite) return;
     const target = e.currentTarget as HTMLElement;
     if (!target) return;
     if (target.scrollTop + target.clientHeight >= target.scrollHeight - 350) {
@@ -204,7 +206,7 @@
   }
 
   $effect(() => {
-    if (viewMode !== 'infinite' || !sentinelElement || !appsBoxElement) return;
+    if (viewMode !== "infinite" || !sentinelElement || !appsBoxElement) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -212,7 +214,7 @@
           loadMoreInfinite();
         }
       },
-      { root: appsBoxElement, rootMargin: '250px' }
+      { root: appsBoxElement, rootMargin: "250px" },
     );
 
     observer.observe(sentinelElement);
@@ -238,7 +240,7 @@
   function handleDeploySuccess(stackName: string) {
     deployingTemplate = null;
     notification = {
-      type: 'success',
+      type: "success",
       message: `Deployment started for "${stackName}". Track live progress on Dashboard!`,
       stackName,
     };
@@ -247,21 +249,23 @@
       if (onDeploySuccess) {
         onDeploySuccess(stackName);
       } else if (onNavigate) {
-        onNavigate('dashboard');
+        onNavigate("dashboard");
       }
     }, 1000);
   }
 
   function clearFilters() {
-    searchQuery = '';
-    selectedCategory = 'All';
-    selectedSource = 'All Sources';
+    searchQuery = "";
+    selectedCategory = "All";
+    selectedSource = "All Sources";
     currentPage = 1;
     infiniteLimit = pageSize;
   }
 </script>
 
-<div class="flex-1 min-h-0 flex flex-col space-y-3 overflow-hidden animate-in fade-in duration-200 h-full">
+<div
+  class="flex-1 min-h-0 flex flex-col space-y-3 overflow-hidden animate-in fade-in duration-200 h-full"
+>
   <!-- Top Banner / Header (Compact & Static) -->
   <div
     class="relative rounded-2xl bg-[#12131c] border border-white/[0.08] px-5 py-3.5 overflow-hidden shadow-xl shrink-0"
@@ -274,7 +278,9 @@
       class="absolute -left-16 -bottom-16 w-64 h-64 bg-cyan-600/10 rounded-full blur-3xl pointer-events-none"
     ></div>
 
-    <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-3">
+    <div
+      class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-3"
+    >
       <div class="space-y-0.5">
         <div class="flex items-center gap-2.5">
           <div
@@ -282,7 +288,9 @@
           >
             <Boxes class="w-4 h-4" />
           </div>
-          <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+          <h1
+            class="text-lg font-bold tracking-tight text-white flex items-center gap-2"
+          >
             <span>App Store & Templates</span>
             <span
               class="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
@@ -292,7 +300,8 @@
           </h1>
         </div>
         <p class="text-[11px] text-slate-400 max-w-xl">
-          Curated self-hosted software ready to launch with single-click Docker Compose configurations.
+          Curated self-hosted software ready to launch with single-click Docker
+          Compose configurations.
         </p>
       </div>
 
@@ -309,7 +318,7 @@
         {#if onNavigate}
           <button
             type="button"
-            onclick={() => onNavigate('settings')}
+            onclick={() => onNavigate("settings")}
             class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#181a26] border border-white/[0.08] hover:border-violet-500/40 text-slate-300 hover:text-white transition text-xs font-medium cursor-pointer"
             title="Configure custom template repositories in Settings"
           >
@@ -326,7 +335,11 @@
           class="p-1.5 rounded-lg bg-[#181a26] border border-white/[0.08] hover:border-violet-500/40 text-slate-300 hover:text-white transition disabled:opacity-50 cursor-pointer"
           title="Refresh catalog"
         >
-          <RefreshCw class="w-3.5 h-3.5 {isRefreshing ? 'animate-spin text-violet-400' : ''}" />
+          <RefreshCw
+            class="w-3.5 h-3.5 {isRefreshing
+              ? 'animate-spin text-violet-400'
+              : ''}"
+          />
         </button>
       </div>
     </div>
@@ -335,15 +348,16 @@
   <!-- Notification Banner -->
   {#if notification}
     <div
-      class="shrink-0 flex items-center justify-between gap-3 p-3.5 rounded-xl border animate-in slide-in-from-top-2 duration-150 {notification.type === 'success'
+      class="shrink-0 flex items-center justify-between gap-3 p-3.5 rounded-xl border animate-in slide-in-from-top-2 duration-150 {notification.type ===
+      'success'
         ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
         : 'bg-red-500/10 border-red-500/30 text-red-300'}"
     >
       <div class="flex items-center gap-2.5 text-xs font-medium">
-        {#if notification.type === 'success'}
-          <CheckCircle2 class="w-4 h-4 text-emerald-400 shrink-0" />
+        {#if notification.type === "success"}
+          <CircleCheck class="w-4 h-4 text-emerald-400 shrink-0" />
         {:else}
-          <AlertCircle class="w-4 h-4 text-red-400 shrink-0" />
+          <CircleAlert class="w-4 h-4 text-red-400 shrink-0" />
         {/if}
         <span>{notification.message}</span>
       </div>
@@ -352,7 +366,7 @@
         {#if notification.stackName && onNavigate}
           <button
             type="button"
-            onclick={() => onNavigate('stacks')}
+            onclick={() => onNavigate("stacks")}
             class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 transition cursor-pointer"
           >
             View in Stacks &rarr;
@@ -375,7 +389,7 @@
       class="shrink-0 flex items-center justify-between p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs"
     >
       <div class="flex items-center gap-2">
-        <AlertCircle class="w-4 h-4 shrink-0" />
+        <CircleAlert class="w-4 h-4 shrink-0" />
         <span>{error}</span>
       </div>
       <button
@@ -406,7 +420,7 @@
         {#if searchQuery}
           <button
             type="button"
-            onclick={() => (searchQuery = '')}
+            onclick={() => (searchQuery = "")}
             class="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-slate-500 hover:text-slate-200 transition cursor-pointer"
             title="Clear search"
           >
@@ -415,33 +429,37 @@
         {/if}
       </div>
 
-      <!-- Source / Catalog Filter Dropdown -->
+      <!-- Source / Catalog Funnel Dropdown -->
       {#if sources.length > 0}
         <div class="relative sm:w-56 shrink-0">
           <select
             bind:value={selectedSource}
             class="w-full pl-3 pr-8 py-2.5 rounded-xl bg-[#12131c] border border-white/[0.08] focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500 text-xs text-white transition appearance-none cursor-pointer"
           >
-            <option value="All Sources">All Catalogs ({templates.length})</option>
+            <option value="All Sources"
+              >All Catalogs ({templates.length})</option
+            >
             {#each sources as src}
               <option value={src}>
-                {src === 'curated' ? 'Curated (Built-in)' : src}
+                {src === "curated" ? "Curated (Built-in)" : src}
               </option>
             {/each}
           </select>
-          <div class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-            <Filter class="w-3.5 h-3.5" />
+          <div
+            class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400"
+          >
+            <Funnel class="w-3.5 h-3.5" />
           </div>
         </div>
       {/if}
     </div>
 
-    <!-- Category Filter Pills -->
+    <!-- Category Funnel Pills -->
     <div class="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
       <!-- 'All' chip -->
       <button
         type="button"
-        onclick={() => (selectedCategory = 'All')}
+        onclick={() => (selectedCategory = "All")}
         class="shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer {selectedCategory ===
         'All'
           ? 'bg-violet-600 text-white shadow-[0_0_15px_rgba(124,58,237,0.4)] border border-violet-400/30'
@@ -449,7 +467,8 @@
       >
         <span>All</span>
         <span
-          class="px-1.5 py-0.2 rounded-full text-[10px] font-mono {selectedCategory === 'All'
+          class="px-1.5 py-0.2 rounded-full text-[10px] font-mono {selectedCategory ===
+          'All'
             ? 'bg-white/20 text-white'
             : 'bg-white/[0.05] text-slate-500'}"
         >
@@ -484,8 +503,10 @@
   <!-- Loading State -->
   {#if isLoading}
     <div class="flex-1 flex flex-col items-center justify-center gap-3 py-16">
-      <Loader2 class="w-8 h-8 text-violet-400 animate-spin" />
-      <span class="text-xs font-mono text-slate-400 animate-pulse">Loading application templates...</span>
+      <LoaderCircle class="w-8 h-8 text-violet-400 animate-spin" />
+      <span class="text-xs font-mono text-slate-400 animate-pulse"
+        >Loading application templates...</span
+      >
     </div>
   {:else if filteredTemplates.length === 0}
     <!-- Empty State -->
@@ -501,7 +522,8 @@
       <div class="space-y-1">
         <h3 class="text-base font-bold text-white">No templates found</h3>
         <p class="text-xs text-slate-400 max-w-sm mx-auto">
-          No application templates match your current filters. Try refining your search query or selecting a different category.
+          No application templates match your current filters. Try refining your
+          search query or selecting a different category.
         </p>
       </div>
 
@@ -522,10 +544,16 @@
     >
       <!-- Results summary counter -->
       <div class="text-xs font-mono text-slate-400">
-        {#if viewMode === 'paged'}
-          Showing <span class="font-semibold text-white">{totalFiltered > 0 ? startIndex + 1 : 0}–{endIndex}</span> of <span class="font-semibold text-white">{totalFiltered}</span> templates
+        {#if viewMode === "paged"}
+          Showing <span class="font-semibold text-white"
+            >{totalFiltered > 0 ? startIndex + 1 : 0}–{endIndex}</span
+          >
+          of <span class="font-semibold text-white">{totalFiltered}</span> templates
         {:else}
-          Showing <span class="font-semibold text-white">{Math.min(infiniteLimit, totalFiltered)}</span> of <span class="font-semibold text-white">{totalFiltered}</span> templates
+          Showing <span class="font-semibold text-white"
+            >{Math.min(infiniteLimit, totalFiltered)}</span
+          >
+          of <span class="font-semibold text-white">{totalFiltered}</span> templates
         {/if}
       </div>
 
@@ -534,12 +562,15 @@
         <!-- Page size selector -->
         <div class="flex items-center gap-2 text-xs font-mono text-slate-400">
           <span>Per page:</span>
-          <div class="flex items-center rounded-xl bg-[#12131c] border border-white/[0.08] p-0.5">
+          <div
+            class="flex items-center rounded-xl bg-[#12131c] border border-white/[0.08] p-0.5"
+          >
             {#each pageSizeOptions as size}
               <button
                 type="button"
                 onclick={() => (pageSize = size)}
-                class="px-2 py-1 rounded-lg text-xs font-mono transition cursor-pointer {pageSize === size
+                class="px-2 py-1 rounded-lg text-xs font-mono transition cursor-pointer {pageSize ===
+                size
                   ? 'bg-violet-600 text-white font-bold shadow-[0_0_10px_rgba(124,58,237,0.4)]'
                   : 'text-slate-400 hover:text-white'}"
               >
@@ -550,11 +581,14 @@
         </div>
 
         <!-- Mode Toggle: Paged vs Infinite Scroll -->
-        <div class="flex items-center rounded-xl bg-[#12131c] border border-white/[0.08] p-0.5">
+        <div
+          class="flex items-center rounded-xl bg-[#12131c] border border-white/[0.08] p-0.5"
+        >
           <button
             type="button"
-            onclick={() => (viewMode = 'paged')}
-            class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition cursor-pointer {viewMode === 'paged'
+            onclick={() => (viewMode = "paged")}
+            class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition cursor-pointer {viewMode ===
+            'paged'
               ? 'bg-violet-600 text-white shadow-[0_0_10px_rgba(124,58,237,0.4)]'
               : 'text-slate-400 hover:text-white'}"
             title="Standard pagination with pages"
@@ -564,8 +598,9 @@
           </button>
           <button
             type="button"
-            onclick={() => (viewMode = 'infinite')}
-            class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition cursor-pointer {viewMode === 'infinite'
+            onclick={() => (viewMode = "infinite")}
+            class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition cursor-pointer {viewMode ===
+            'infinite'
               ? 'bg-violet-600 text-white shadow-[0_0_10px_rgba(124,58,237,0.4)]'
               : 'text-slate-400 hover:text-white'}"
             title="Smooth infinite scroll"
@@ -584,21 +619,28 @@
       class="flex-1 min-h-0 overflow-y-auto rounded-2xl bg-[#0c0d14]/75 border border-white/[0.08] p-4 shadow-inner space-y-4 scrollbar-thin scrollbar-thumb-violet-500/20 hover:scrollbar-thumb-violet-500/40"
     >
       <!-- Template Grid -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {#each displayedTemplates as template, idx (template.id + '-' + (template.source || '') + '-' + idx)}
+      <div
+        class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
+      >
+        {#each displayedTemplates as template, idx (template.id + "-" + (template.source || "") + "-" + idx)}
           <TemplateCard {template} onDeploy={handleOpenDeploy} />
         {/each}
       </div>
 
-      <!-- Infinite Scroll Sentinel & Loader (Infinite Mode) inside the box -->
-      {#if viewMode === 'infinite'}
+      <!-- Infinite Scroll Sentinel & LoaderCircle (Infinite Mode) inside the box -->
+      {#if viewMode === "infinite"}
         <div class="py-4">
           <!-- Sentinel element for IntersectionObserver -->
-          <div bind:this={sentinelElement} class="h-6 w-full pointer-events-none"></div>
+          <div
+            bind:this={sentinelElement}
+            class="h-6 w-full pointer-events-none"
+          ></div>
 
           {#if isLoadingMore}
-            <div class="py-4 flex items-center justify-center gap-2.5 text-xs font-mono text-violet-400 animate-pulse">
-              <Loader2 class="w-4 h-4 animate-spin text-violet-400" />
+            <div
+              class="py-4 flex items-center justify-center gap-2.5 text-xs font-mono text-violet-400 animate-pulse"
+            >
+              <LoaderCircle class="w-4 h-4 animate-spin text-violet-400" />
               <span>Loading more application templates...</span>
             </div>
           {:else if hasMoreInfinite}
@@ -609,7 +651,9 @@
                 class="flex items-center gap-2 px-5 py-2 rounded-xl bg-[#181a26] hover:bg-violet-600/20 border border-white/[0.08] hover:border-violet-500/40 text-xs font-semibold text-slate-300 hover:text-white transition shadow-lg cursor-pointer active:scale-95"
               >
                 <span>Load More Templates</span>
-                <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-violet-600/30 text-violet-300">
+                <span
+                  class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-violet-600/30 text-violet-300"
+                >
                   +{Math.min(pageSize, totalFiltered - infiniteLimit)}
                 </span>
               </button>
@@ -626,12 +670,13 @@
     </div>
 
     <!-- Pinned Static Pagination Controls (Paged Mode) -->
-    {#if viewMode === 'paged' && totalPages > 1}
+    {#if viewMode === "paged" && totalPages > 1}
       <div
         class="shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3 pt-1 px-1"
       >
         <div class="text-xs font-mono text-slate-400">
-          Page <span class="font-semibold text-white">{currentPage}</span> of <span class="font-semibold text-white">{totalPages}</span>
+          Page <span class="font-semibold text-white">{currentPage}</span> of
+          <span class="font-semibold text-white">{totalPages}</span>
         </div>
 
         <div class="flex items-center gap-1.5 flex-wrap justify-center">
@@ -660,13 +705,17 @@
 
           <!-- Page Number Chips -->
           {#each pageNumbers as p}
-            {#if p === '...'}
-              <span class="px-2 py-1 text-xs font-mono text-slate-600 select-none">...</span>
+            {#if p === "..."}
+              <span
+                class="px-2 py-1 text-xs font-mono text-slate-600 select-none"
+                >...</span
+              >
             {:else}
               <button
                 type="button"
                 onclick={() => goToPage(Number(p))}
-                class="min-w-[32px] h-8 px-2 rounded-xl text-xs font-mono font-medium transition cursor-pointer {currentPage === p
+                class="min-w-[32px] h-8 px-2 rounded-xl text-xs font-mono font-medium transition cursor-pointer {currentPage ===
+                p
                   ? 'bg-violet-600 text-white font-bold shadow-[0_0_15px_rgba(124,58,237,0.4)] border border-violet-400/30'
                   : 'bg-[#12131c] text-slate-400 hover:text-white hover:bg-[#181a26] border border-white/[0.08]'}"
               >

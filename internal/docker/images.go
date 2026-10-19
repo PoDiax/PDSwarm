@@ -116,15 +116,24 @@ func (s *Service) GetImageEnv(ctx context.Context, id string) []string {
 	return inspect.Config.Env
 }
 
-// ImageUpdateInfo represents the status of a local image compared to its remote registry manifest.
+// ImageUpdateInfo represents the status of a local image compared to its remote registry manifest,
+// including version diffs and changelogs.
 type ImageUpdateInfo struct {
-	ImageRef     string `json:"image_ref"`
-	Status       string `json:"status"` // "up_to_date", "update_available", "not_found", "unknown"
-	UpToDate     bool   `json:"up_to_date"`
-	LocalDigest  string `json:"local_digest,omitempty"`
-	RemoteDigest string `json:"remote_digest,omitempty"`
-	Message      string `json:"message"`
-	Error        string `json:"error,omitempty"`
+	ImageRef        string             `json:"image_ref"`
+	Status          string             `json:"status"` // "up_to_date", "update_available", "not_found", "unknown"
+	UpToDate        bool               `json:"up_to_date"`
+	LocalDigest     string             `json:"local_digest,omitempty"`
+	RemoteDigest    string             `json:"remote_digest,omitempty"`
+	LocalID         string             `json:"local_id,omitempty"`
+	LocalVersion    string             `json:"local_version,omitempty"`
+	LocalCreated    string             `json:"local_created,omitempty"`
+	LocalSize       int64              `json:"local_size,omitempty"`
+	SourceURL       string             `json:"source_url,omitempty"`
+	ChangelogURL    string             `json:"changelog_url,omitempty"`
+	HubURL          string             `json:"hub_url,omitempty"`
+	Releases        []ImageReleaseNote `json:"releases,omitempty"`
+	Message         string             `json:"message"`
+	Error           string             `json:"error,omitempty"`
 }
 
 // CheckImageUpdate compares the local image's digest with the registry's distribution manifest.
@@ -149,6 +158,24 @@ func (s *Service) CheckImageUpdate(ctx context.Context, imageRef, authConfig str
 		res.Message = "Local image not found: " + err.Error()
 		return res, nil
 	}
+
+	res.LocalID = inspect.ID
+	if strings.HasPrefix(res.LocalID, "sha256:") {
+		res.LocalID = res.LocalID[7:]
+	}
+	if len(res.LocalID) > 12 {
+		res.LocalID = res.LocalID[:12]
+	}
+	res.LocalCreated = inspect.Created
+	res.LocalSize = inspect.Size
+
+	// Extract version, source, changelog, hub, and releases
+	lVer, srcURL, clURL, hubURL, rels := ExtractImageMetadataAndChangelog(ctx, imageRef, inspect)
+	res.LocalVersion = lVer
+	res.SourceURL = srcURL
+	res.ChangelogURL = clURL
+	res.HubURL = hubURL
+	res.Releases = rels
 
 	var localDigest string
 	if len(inspect.RepoDigests) > 0 {

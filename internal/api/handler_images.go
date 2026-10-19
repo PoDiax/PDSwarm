@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types/image"
@@ -29,6 +30,15 @@ type PullImageRequest struct {
 type CheckImageUpdateRequest struct {
 	Image      string `json:"image"`
 	RegistryID string `json:"registry_id,omitempty"`
+}
+
+type CheckImageUpdatesBatchRequest struct {
+	Images     []string `json:"images"`
+	RegistryID string   `json:"registry_id,omitempty"`
+}
+
+type CheckImageUpdatesBatchResponse struct {
+	Results map[string]*docker.ImageUpdateInfo `json:"results"`
 }
 
 type dockerPullLine struct {
@@ -140,6 +150,101 @@ func HandleCheckImageUpdate(st store.Store, ds *docker.Service) http.HandlerFunc
 		}
 
 		respondJSON(w, http.StatusOK, info)
+	}
+}
+
+// HandleCheckImageUpdatesBatch concurrently checks updates for multiple Docker images.
+func HandleCheckImageUpdatesBatch(st store.Store, ds *docker.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		targetDS := dockerFromContext(r.Context(), ds)
+		if targetDS == nil {
+			respondJSONError(w, http.StatusServiceUnavailable, "docker service not available")
+			return
+		}
+
+		var req CheckImageUpdatesBatchRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondJSONError(w, http.StatusBadRequest, "invalid request payload: "+err.Error())
+			return
+		}
+
+		// Filter and deduplicate images
+		seen := make(map[string]bool)
+		var uniqueImages []string
+		for _, img := range req.Images {
+			trimmed := strings.TrimSpace(img)
+			if trimmed == "" || strings.HasPrefix(trimmed, "<none>") || seen[trimmed] {
+				continue
+			}
+			seen[trimmed] = true
+			uniqueImages = append(uniqueImages, trimmed)
+		}
+
+		results := make(map[string]*docker.ImageUpdateInfo)
+		if len(uniqueImages) == 0 {
+			respondJSON(w, http.StatusOK, CheckImageUpdatesBatchResponse{Results: results})
+			return
+		}
+
+		// Worker pool for concurrency (up to 8 concurrent checks)
+		maxWorkers := 8
+		if len(uniqueImages) < maxWorkers {
+			maxWorkers = len(uniqueImages)
+		}
+
+		jobs := make(chan string, len(uniqueImages))
+		for _, img := range uniqueImages {
+			jobs <- img
+		}
+		close(jobs)
+
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+
+		for wIdx := 0; wIdx < maxWorkers; wIdx++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for ref := range jobs {
+					var authConfig string
+					if st != nil {
+						var reg *store.Registry
+						if req.RegistryID != "" {
+							reg, _ = st.GetRegistry(req.RegistryID)
+						} else {
+							domain := extractImageDomain(ref)
+							if domain != "" {
+								reg, _ = st.GetRegistryByURL(domain)
+							}
+						}
+						if reg != nil && (reg.Username != "" || reg.Password != "") {
+							authConfig = docker.EncodeRegistryAuth(reg.Username, reg.Password, reg.URL)
+						}
+					}
+
+					checkCtx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+					info, err := targetDS.CheckImageUpdate(checkCtx, ref, authConfig)
+					cancel()
+
+					if err != nil {
+						info = &docker.ImageUpdateInfo{
+							ImageRef: ref,
+							Status:   "unknown",
+							Error:    err.Error(),
+							Message:  "Check failed: " + err.Error(),
+						}
+					}
+
+					mu.Lock()
+					results[ref] = info
+					mu.Unlock()
+				}
+			}()
+		}
+
+		wg.Wait()
+
+		respondJSON(w, http.StatusOK, CheckImageUpdatesBatchResponse{Results: results})
 	}
 }
 

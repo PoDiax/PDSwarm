@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import {
+    onMount } from 'svelte';
   import {
     Folder,
     FolderOpen,
@@ -9,15 +10,15 @@
     FileCode,
     Upload,
     Download,
-    Trash2,
-    Edit3,
+    Trash,
+    PenLine,
     Plus,
     RefreshCw,
     Search,
     ChevronRight,
-    AlertCircle,
-    CheckCircle2,
-    Loader2,
+    CircleAlert,
+    CircleCheck,
+    LoaderCircle,
     Home,
     AlertTriangle,
   } from '@lucide/svelte';
@@ -270,9 +271,9 @@
     >
       <div class="flex items-center gap-2">
         {#if feedback.type === 'success'}
-          <CheckCircle2 class="w-4 h-4 text-emerald-400 shrink-0" />
+          <CircleCheck class="w-4 h-4 text-emerald-400 shrink-0" />
         {:else}
-          <AlertCircle class="w-4 h-4 text-rose-400 shrink-0" />
+          <CircleAlert class="w-4 h-4 text-rose-400 shrink-0" />
         {/if}
         <span>{feedback.text}</span>
       </div>
@@ -283,7 +284,7 @@
   {#if error}
     <div class="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-between text-xs text-rose-300">
       <div class="flex items-center gap-2">
-        <AlertCircle class="w-4 h-4 text-rose-400 shrink-0" />
+        <CircleAlert class="w-4 h-4 text-rose-400 shrink-0" />
         <span>{error}</span>
       </div>
       <button
@@ -347,7 +348,7 @@
           title="Upload a file from your computer"
         >
           {#if isUploading}
-            <Loader2 class="w-3.5 h-3.5 animate-spin" />
+            <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
             <span>Uploading...</span>
           {:else}
             <Upload class="w-3.5 h-3.5" />
@@ -432,7 +433,7 @@
           {#if isLoading && files.length === 0}
             <tr>
               <td colspan="5" class="py-12 text-center text-slate-400">
-                <Loader2 class="w-6 h-6 animate-spin text-cyan-400 mx-auto mb-2" />
+                <LoaderCircle class="w-6 h-6 animate-spin text-cyan-400 mx-auto mb-2" />
                 <span>Reading directory contents...</span>
               </td>
             </tr>
@@ -519,7 +520,7 @@
                         class="p-1.5 rounded-lg bg-white/[0.04] hover:bg-violet-600/20 text-slate-300 hover:text-violet-300 transition"
                         title="View / Edit file"
                       >
-                        <Edit3 class="w-3.5 h-3.5" />
+                        <PenLine class="w-3.5 h-3.5" />
                       </button>
 
                       <!-- Download Button -->
@@ -540,7 +541,7 @@
                       class="p-1.5 rounded-lg bg-white/[0.04] hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition"
                       title={file.is_dir ? 'Delete directory' : 'Delete file'}
                     >
-                      <Trash2 class="w-3.5 h-3.5" />
+                      <Trash class="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </td>
@@ -593,7 +594,7 @@
     <div class="relative w-full max-w-md rounded-2xl bg-[#12131c] border border-white/[0.12] p-6 space-y-4 shadow-[0_10px_50px_rgba(0,0,0,0.8)]">
       <div class="flex items-center gap-3">
         <div class="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400">
-          <Trash2 class="w-5 h-5" />
+          <Trash class="w-5 h-5" />
         </div>
         <div>
           <h3 id="delete-file-title" class="text-sm font-bold text-white">
@@ -624,7 +625,7 @@
           class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-[0_0_15px_rgba(244,63,94,0.4)] transition inline-flex items-center gap-2 disabled:opacity-50"
         >
           {#if isDeleting}
-            <Loader2 class="w-3.5 h-3.5 animate-spin" />
+            <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
             <span>Deleting...</span>
           {:else}
             <span>Confirm Delete</span>

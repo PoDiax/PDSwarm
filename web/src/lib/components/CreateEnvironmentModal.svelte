@@ -7,9 +7,9 @@
     Globe,
     Lock,
     Upload,
-    CheckCircle2,
-    AlertCircle,
-    Loader2,
+    CircleCheck,
+    CircleAlert,
+    LoaderCircle,
     Zap,
     FileText,
   } from '@lucide/svelte';
@@ -267,7 +267,7 @@
         <!-- Error Banner -->
         {#if error}
           <div class="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-3 text-rose-300 text-xs animate-in fade-in duration-150">
-            <AlertCircle class="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <CircleAlert class="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
             <div class="flex-1 leading-relaxed">
               <span class="font-semibold text-rose-200">Connection Error:</span> {error}
             </div>
@@ -278,9 +278,9 @@
         {#if testResult}
           <div class="p-3.5 rounded-xl {testResult.success ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-amber-500/10 border-amber-500/30 text-amber-300'} border flex items-start gap-3 text-xs animate-in fade-in duration-150">
             {#if testResult.success}
-              <CheckCircle2 class="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <CircleCheck class="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
             {:else}
-              <AlertCircle class="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <CircleAlert class="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
             {/if}
             <div class="flex-1 leading-relaxed">
               {testResult.message}
@@ -503,7 +503,7 @@
             class="px-4 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-xs font-medium text-slate-300 hover:text-white transition flex items-center gap-2 disabled:opacity-50"
           >
             {#if isTesting}
-              <Loader2 class="w-3.5 h-3.5 animate-spin text-cyan-400" />
+              <LoaderCircle class="w-3.5 h-3.5 animate-spin text-cyan-400" />
               <span>Checking...</span>
             {:else}
               <Zap class="w-3.5 h-3.5 text-cyan-400" />
@@ -526,10 +526,10 @@
               class="px-5 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-600 hover:from-violet-500 hover:to-cyan-500 text-xs font-semibold text-white shadow-[0_0_15px_rgba(124,58,237,0.3)] transition flex items-center gap-2 disabled:opacity-50"
             >
               {#if isSubmitting}
-                <Loader2 class="w-3.5 h-3.5 animate-spin" />
+                <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
                 <span>Connecting...</span>
               {:else}
-                <CheckCircle2 class="w-3.5 h-3.5" />
+                <CircleCheck class="w-3.5 h-3.5" />
                 <span>Save & Connect</span>
               {/if}
             </button>

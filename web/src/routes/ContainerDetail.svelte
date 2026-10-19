@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import {
+    onMount } from 'svelte';
   import {
     ArrowLeft,
     Box,
@@ -9,7 +10,7 @@
     RotateCw,
     Pause,
     Skull,
-    Trash2,
+    Trash,
     RefreshCw,
     ExternalLink,
     Copy,
@@ -22,20 +23,23 @@
     Network,
     Clock,
     ShieldAlert,
-    AlertCircle,
-    CheckCircle2,
-    Loader2,
+    CircleAlert,
+    CircleCheck,
+    LoaderCircle,
     Download,
     Braces,
-    Sliders,
+    SlidersHorizontal,
     FolderTree,
-    Edit3,
+    PenLine,
     Sparkles,
-    ArrowUpCircle,
+    CircleArrowUp,
+    Globe,
+    Tag,
   } from '@lucide/svelte';
   import { containerApi, taskApi } from '../lib/api';
   import { imageUpdateStore } from '../lib/stores/imageUpdates.svelte';
   import { tasksStore } from '../lib/stores/tasks.svelte';
+  import { getPortOpenUrl, getContainerCustomUrl, formatUrlBadge } from '../lib/utils/portLink';
   import type { ContainerInspectInfo } from '../lib/types';
   import TerminalView from '../lib/components/Terminal.svelte';
   import LogsViewer from '../lib/components/LogsViewer.svelte';
@@ -281,6 +285,7 @@
   let statusStyle = $derived(getStatusStyle(inspectData?.State?.Status));
   let stackProject = $derived(inspectData?.Config?.Labels?.['com.docker.compose.project']);
   let stackService = $derived(inspectData?.Config?.Labels?.['com.docker.compose.service']);
+  let customAppUrl = $derived(getContainerCustomUrl(inspectData?.Config?.Labels));
 
   // Flattened port mappings
   let portList = $derived.by(() => {
@@ -368,6 +373,17 @@
     const q = envSearchQuery.toLowerCase();
     return list.filter(e => e.key.toLowerCase().includes(q) || e.val.toLowerCase().includes(q));
   });
+
+  // Container Labels list
+  let labelSearchQuery = $state('');
+  let containerLabelsList = $derived.by(() => {
+    const labels = inspectData?.Config?.Labels || {};
+    const entries = Object.entries(labels).map(([key, value]) => ({ key, value }));
+    if (!labelSearchQuery.trim()) return entries;
+    const q = labelSearchQuery.toLowerCase();
+    return entries.filter(e => e.key.toLowerCase().includes(q) || e.value.toLowerCase().includes(q));
+  });
+  let totalLabelsCount = $derived(Object.keys(inspectData?.Config?.Labels || {}).length);
 </script>
 
 <div class="space-y-6 animate-in fade-in duration-200">
@@ -425,7 +441,7 @@
 
       {#if isActionLoading}
         <div class="px-3 py-1.5 rounded-xl bg-[#12131c] border border-white/[0.08] flex items-center gap-2 text-xs text-violet-300 font-mono">
-          <Loader2 class="w-3.5 h-3.5 animate-spin text-cyan-400" />
+          <LoaderCircle class="w-3.5 h-3.5 animate-spin text-cyan-400" />
           <span class="capitalize">{isActionLoading}...</span>
         </div>
       {:else}
@@ -467,7 +483,7 @@
           class="px-3 py-1.5 rounded-xl bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 text-xs font-semibold transition inline-flex items-center gap-1.5"
           title="Duplicate or Edit & Recreate Container"
         >
-          <Sliders class="w-3.5 h-3.5" />
+          <SlidersHorizontal class="w-3.5 h-3.5" />
           <span>Duplicate / Edit</span>
         </button>
 
@@ -481,10 +497,10 @@
             title="Pull latest image and recreate container"
           >
             {#if isUpdatingImage}
-              <Loader2 class="w-3.5 h-3.5 animate-spin text-amber-400" />
+              <LoaderCircle class="w-3.5 h-3.5 animate-spin text-amber-400" />
               <span>Updating...</span>
             {:else}
-              <ArrowUpCircle class="w-3.5 h-3.5 text-amber-400" />
+              <CircleArrowUp class="w-3.5 h-3.5 text-amber-400" />
               <span>Update Image</span>
             {/if}
           </button>
@@ -530,7 +546,7 @@
           class="p-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/30 text-xs transition"
           title="Delete Container"
         >
-          <Trash2 class="w-3.5 h-3.5" />
+          <Trash class="w-3.5 h-3.5" />
         </button>
       {/if}
     </div>
@@ -547,11 +563,11 @@
     >
       <div class="flex items-center gap-2">
         {#if feedbackMessage.type === 'success'}
-          <CheckCircle2 class="w-4 h-4 text-emerald-400 shrink-0" />
+          <CircleCheck class="w-4 h-4 text-emerald-400 shrink-0" />
         {:else if feedbackMessage.type === 'info'}
           <Sparkles class="w-4 h-4 text-cyan-400 shrink-0 animate-pulse" />
         {:else}
-          <AlertCircle class="w-4 h-4 text-rose-400 shrink-0" />
+          <CircleAlert class="w-4 h-4 text-rose-400 shrink-0" />
         {/if}
         <span>{feedbackMessage.text}</span>
       </div>
@@ -561,7 +577,7 @@
   {#if error}
     <div class="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-between text-xs text-rose-300">
       <div class="flex items-center gap-2">
-        <AlertCircle class="w-4 h-4 text-rose-400 shrink-0" />
+        <CircleAlert class="w-4 h-4 text-rose-400 shrink-0" />
         <span>{error}</span>
       </div>
       <button
@@ -599,7 +615,7 @@
           onclick={() => onNavigateToStack?.(stackProject)}
           class="px-3 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-semibold transition inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
         >
-          <Edit3 class="w-3.5 h-3.5" />
+          <PenLine class="w-3.5 h-3.5" />
           <span>Edit Stack in Studio</span>
         </button>
       {/if}
@@ -638,14 +654,14 @@
 
         {#if isChecking}
           <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-            <Loader2 class="w-2.5 h-2.5 animate-spin text-cyan-400" />
+            <LoaderCircle class="w-2.5 h-2.5 animate-spin text-cyan-400" />
             <span>Checking registry...</span>
           </div>
         {:else if update}
           {#if update.status === 'update_available'}
             <div class="space-y-1.5 pt-0.5">
               <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.25)]">
-                <ArrowUpCircle class="w-3 h-3 text-amber-400" />
+                <CircleArrowUp class="w-3 h-3 text-amber-400" />
                 <span>Update Available</span>
               </span>
               <button
@@ -654,13 +670,13 @@
                 disabled={isUpdatingImage}
                 class="w-full py-1 px-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[10px] font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-[0_0_10px_rgba(245,158,11,0.2)]"
               >
-                <ArrowUpCircle class="w-3 h-3 text-amber-400" />
+                <CircleArrowUp class="w-3 h-3 text-amber-400" />
                 <span>Pull & Recreate</span>
               </button>
             </div>
           {:else if update.status === 'up_to_date'}
             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-              <CheckCircle2 class="w-3 h-3 text-emerald-400" />
+              <CircleCheck class="w-3 h-3 text-emerald-400" />
               <span>Up to date</span>
             </span>
           {/if}
@@ -713,7 +729,7 @@
       onclick={() => setActiveTab('details')}
       class="px-4 py-2 rounded-xl text-xs font-medium font-mono transition flex items-center gap-2 whitespace-nowrap {activeTab === 'details' ? 'bg-violet-600 text-white shadow-[0_0_15px_rgba(124,58,237,0.35)]' : 'text-slate-400 hover:text-white hover:bg-white/5'}"
     >
-      <Sliders class="w-3.5 h-3.5" />
+      <SlidersHorizontal class="w-3.5 h-3.5" />
       <span>Configuration & Details</span>
     </button>
 
@@ -853,10 +869,25 @@
 
       <!-- Port Forwarding Table -->
       <div class="p-6 rounded-2xl bg-[#12131c] border border-white/[0.08] space-y-4">
-        <h3 class="text-xs font-mono uppercase tracking-wider text-emerald-400 font-semibold flex items-center gap-2">
-          <Network class="w-4 h-4" />
-          Port Bindings
-        </h3>
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-mono uppercase tracking-wider text-emerald-400 font-semibold flex items-center gap-2">
+            <Network class="w-4 h-4" />
+            Port Bindings
+          </h3>
+          {#if customAppUrl}
+            <a
+              href={customAppUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono bg-violet-500/15 hover:bg-violet-500/25 text-violet-300 border border-violet-500/30 transition group/applink"
+              title="Open App: {customAppUrl}"
+            >
+              <Globe class="w-3.5 h-3.5 text-violet-400 group-hover/applink:text-violet-200" />
+              <span>Open App ({formatUrlBadge(customAppUrl)})</span>
+              <ExternalLink class="w-3 h-3 opacity-60 group-hover/applink:opacity-100" />
+            </a>
+          {/if}
+        </div>
 
         {#if portList.length === 0}
           <p class="text-xs text-slate-500 font-mono italic">No mapped network ports.</p>
@@ -877,11 +908,13 @@
                     <td class="py-2 text-slate-400">{port.hostIp}</td>
                     <td class="py-2 text-right">
                       {#if port.hostPort !== '-'}
+                        {@const portUrl = getPortOpenUrl(port.hostPort, inspectData?.Config?.Labels)}
                         <a
-                          href="http://localhost:{port.hostPort}"
+                          href={portUrl}
                           target="_blank"
                           rel="noopener noreferrer"
                           class="inline-flex items-center gap-1 text-cyan-400 hover:text-cyan-300 transition"
+                          title="Open {portUrl}"
                         >
                           <span>:{port.hostPort}</span>
                           <ExternalLink class="w-3 h-3" />
@@ -942,7 +975,7 @@
               Environment Variables ({filteredEnv.length})
             </h3>
 
-            <!-- Filter Pills -->
+            <!-- Funnel Pills -->
             <div class="flex items-center gap-1 bg-[#0a0b10] p-0.5 rounded-lg border border-white/[0.06] text-[11px] font-mono">
               <button
                 type="button"
@@ -1015,6 +1048,77 @@
           </div>
         {/if}
       </div>
+
+      <!-- Container Labels Card -->
+      <div class="p-6 rounded-2xl bg-[#12131c] border border-white/[0.08] space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/[0.08]">
+          <div class="flex items-center gap-2">
+            <Tag class="w-4 h-4 text-violet-400" />
+            <h3 class="text-xs font-mono uppercase tracking-wider text-white font-bold">
+              Container Labels ({totalLabelsCount})
+            </h3>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <input
+              type="text"
+              bind:value={labelSearchQuery}
+              placeholder="Search labels..."
+              class="px-3 py-1 rounded-xl bg-[#0a0b10] border border-white/[0.08] text-white text-xs font-mono focus:outline-none focus:border-violet-400 w-48"
+            />
+            {#if totalLabelsCount > 0}
+              <button
+                type="button"
+                onclick={() => copyText(containerLabelsList.map(l => `${l.key}=${l.value}`).join('\n'))}
+                class="px-2.5 py-1 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 text-xs font-mono border border-white/[0.08] flex items-center gap-1.5 transition"
+                title="Copy visible labels"
+              >
+                <Copy class="w-3 h-3" />
+                <span>Copy</span>
+              </button>
+            {/if}
+          </div>
+        </div>
+
+        {#if containerLabelsList.length === 0}
+          <p class="text-xs text-slate-500 font-mono italic">
+            {totalLabelsCount === 0 ? 'No labels attached to this container.' : 'No matching labels found.'}
+          </p>
+        {:else}
+          <div class="max-h-72 overflow-y-auto space-y-1.5 font-mono text-xs pr-1">
+            {#each containerLabelsList as item}
+              <div class="p-2.5 rounded-xl bg-[#0a0b10] border border-white/[0.04] flex items-center justify-between gap-3 group">
+                <div class="flex items-center gap-2 shrink-0 min-w-0 max-w-[45%]">
+                  <span class="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium {item.key.startsWith('pdswarm.') ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20' : 'bg-slate-800 text-slate-400 border border-slate-700/50'} shrink-0">
+                    {item.key.startsWith('pdswarm.') ? 'PDSWARM' : 'LABEL'}
+                  </span>
+                  <span class="truncate font-semibold {item.key.startsWith('pdswarm.') ? 'text-violet-300' : 'text-slate-300'}" title={item.key}>
+                    {item.key}
+                  </span>
+                </div>
+                <div class="flex items-center gap-2 flex-1 justify-end min-w-0">
+                  {#if item.key === 'pdswarm.url' || item.value.startsWith('http://') || item.value.startsWith('https://')}
+                    <a
+                      href={item.value}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="inline-flex items-center gap-1 text-cyan-400 hover:text-cyan-300 hover:underline truncate text-right font-medium"
+                      title="Open external URL"
+                    >
+                      <span class="truncate">{item.value}</span>
+                      <ExternalLink class="w-3 h-3 shrink-0" />
+                    </a>
+                  {:else}
+                    <span class="text-slate-400 truncate text-right select-all" title={item.value}>
+                      {item.value}
+                    </span>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
     </div>
   {:else if activeTab === 'json'}
     <!-- Inspect JSON Viewer -->
@@ -1072,7 +1176,7 @@
     <div class="relative w-full max-w-md rounded-2xl bg-[#12131c] border border-white/[0.12] p-6 space-y-4 shadow-[0_10px_50px_rgba(0,0,0,0.8)]">
       <div class="flex items-center gap-3">
         <div class="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400">
-          <Trash2 class="w-5 h-5" />
+          <Trash class="w-5 h-5" />
         </div>
         <div>
           <h3 id="delete-detail-title" class="text-sm font-bold text-white">Delete Container?</h3>
@@ -1116,7 +1220,7 @@
   onClose={() => isDuplicateModalOpen = false}
   onCreated={async (newId) => {
     isDuplicateModalOpen = false;
-    showFeedback('success', 'Container reconfigured and deployed successfully.');
+    showFeedback('info', 'Container recreation initiated in background...');
     if (newId === effectiveContainerId) {
       await loadContainer();
     } else {

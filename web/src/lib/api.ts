@@ -45,8 +45,12 @@ import type {
   DeployProgressEvent,
   BackgroundTask,
   ImageUpdateStatus,
+  CheckImageUpdatesBatchResponse,
   LoggingConfig,
   UpdateLoggingConfigPayload,
+  UpdateStatus,
+  ApplyUpdateResponse,
+  AuditLogInfo,
 } from './types';
 
 export class ApiError extends Error {
@@ -199,12 +203,21 @@ export const systemApi = {
   getLoggingConfig: () => api.get<LoggingConfig>('/system/logging'),
   updateLoggingConfig: (payload: UpdateLoggingConfigPayload) =>
     api.put<LoggingConfig>('/system/logging', payload),
+  getUpdateStatus: (force = false) =>
+    api.get<UpdateStatus>(`/system/update${force ? '?check=true' : ''}`),
+  checkUpdate: () => api.post<UpdateStatus>('/system/update/check', {}),
+  setAutoUpdate: (enabled: boolean) =>
+    api.put<UpdateStatus>('/system/update/auto', { enabled }),
+  applyUpdate: () => api.post<ApplyUpdateResponse>('/system/update/apply', {}),
+  getAuditLogs: () => api.get<AuditLogInfo>('/system/audit-logs'),
 };
 
 export const containerApi = {
   list: (all = true) => api.get<Container[]>(`/containers?all=${all}`),
   inspect: (id: string) => api.get<ContainerInspectInfo>(`/containers/${id}`),
   create: (req: CreateContainerRequest) => api.post<{ id: string }>('/containers', req),
+  recreate: (id: string, req: CreateContainerRequest) =>
+    api.post<{ task_id: string; status: string; message: string }>(`/containers/${id}/recreate`, req),
   start: (id: string) => api.post<{ status: string }>(`/containers/${id}/start`),
   stop: (id: string, timeout = 10) => api.post<{ status: string }>(`/containers/${id}/stop?timeout=${timeout}`),
   restart: (id: string, timeout = 10) => api.post<{ status: string }>(`/containers/${id}/restart?timeout=${timeout}`),
@@ -427,6 +440,8 @@ export const imageApi = {
   prune: () => api.post<{ ImagesDeleted: unknown[]; SpaceReclaimed: number }>('/images/prune'),
   checkUpdate: (image: string, registryId?: string) =>
     api.post<ImageUpdateStatus>('/images/check-update', { image, registry_id: registryId }),
+  checkBatch: (images: string[], registryId?: string) =>
+    api.post<CheckImageUpdatesBatchResponse>('/images/check-updates', { images, registry_id: registryId }),
 };
 
 export const volumeApi = {

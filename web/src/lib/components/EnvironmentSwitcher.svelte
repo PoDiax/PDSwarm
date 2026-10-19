@@ -1,16 +1,17 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import {
+    onMount } from 'svelte';
   import {
     Server,
     ChevronDown,
     Plus,
     Check,
-    Trash2,
+    Trash,
     RefreshCw,
     Terminal,
     Globe,
     Lock,
-    AlertCircle,
+    CircleAlert,
     Activity,
   } from '@lucide/svelte';
   import { environmentStore } from '../stores/environment.svelte';
@@ -230,7 +231,7 @@
                     title={deleteConfirmId === env.id ? 'Click again to confirm delete' : 'Delete environment'}
                     class="p-1.5 rounded-lg transition {deleteConfirmId === env.id ? 'bg-rose-500 text-white animate-pulse' : 'text-slate-500 hover:text-rose-400 hover:bg-rose-500/10'}"
                   >
-                    <Trash2 class="w-3.5 h-3.5" />
+                    <Trash class="w-3.5 h-3.5" />
                   </button>
                 {/if}
 

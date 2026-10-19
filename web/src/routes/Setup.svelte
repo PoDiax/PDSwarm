@@ -4,8 +4,8 @@
     User as UserIcon,
     Eye,
     EyeOff,
-    CheckCircle2,
-    AlertCircle,
+    CircleCheck,
+    CircleAlert,
     RefreshCw,
     ArrowRight,
   } from '@lucide/svelte';
@@ -112,7 +112,7 @@
 
     {#if errorMessage}
       <div class="mb-5 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-sm flex items-start gap-2.5 animate-in fade-in duration-150">
-        <AlertCircle class="w-4 h-4 mt-0.5 shrink-0 text-rose-400" />
+        <CircleAlert class="w-4 h-4 mt-0.5 shrink-0 text-rose-400" />
         <span class="leading-snug">{errorMessage}</span>
       </div>
     {/if}
@@ -183,19 +183,19 @@
             </div>
             <div class="grid grid-cols-2 gap-1.5 text-[11px] text-slate-400 pt-1">
               <span class="flex items-center gap-1.5 {hasMinLength ? 'text-emerald-400' : ''}">
-                <CheckCircle2 class="w-3 h-3 {hasMinLength ? 'text-emerald-400' : 'text-slate-600'}" />
+                <CircleCheck class="w-3 h-3 {hasMinLength ? 'text-emerald-400' : 'text-slate-600'}" />
                 8+ characters
               </span>
               <span class="flex items-center gap-1.5 {hasMixedCase ? 'text-emerald-400' : ''}">
-                <CheckCircle2 class="w-3 h-3 {hasMixedCase ? 'text-emerald-400' : 'text-slate-600'}" />
+                <CircleCheck class="w-3 h-3 {hasMixedCase ? 'text-emerald-400' : 'text-slate-600'}" />
                 Mixed case
               </span>
               <span class="flex items-center gap-1.5 {hasNumberOrSymbol ? 'text-emerald-400' : ''}">
-                <CheckCircle2 class="w-3 h-3 {hasNumberOrSymbol ? 'text-emerald-400' : 'text-slate-600'}" />
+                <CircleCheck class="w-3 h-3 {hasNumberOrSymbol ? 'text-emerald-400' : 'text-slate-600'}" />
                 Number or symbol
               </span>
               <span class="flex items-center gap-1.5 {passwordsMatch ? 'text-emerald-400' : ''}">
-                <CheckCircle2 class="w-3 h-3 {passwordsMatch ? 'text-emerald-400' : 'text-slate-600'}" />
+                <CircleCheck class="w-3 h-3 {passwordsMatch ? 'text-emerald-400' : 'text-slate-600'}" />
                 Passwords match
               </span>
             </div>

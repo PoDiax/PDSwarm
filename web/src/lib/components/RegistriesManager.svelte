@@ -1,14 +1,15 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import {
+    onMount } from 'svelte';
   import {
     Key,
     Plus,
     RefreshCw,
-    Trash2,
-    Edit3,
-    CheckCircle2,
-    AlertCircle,
-    Loader2,
+    Trash,
+    PenLine,
+    CircleCheck,
+    CircleAlert,
+    LoaderCircle,
     X,
     ExternalLink,
     Globe,
@@ -365,9 +366,9 @@
       >
         <div class="flex items-center gap-2.5">
           {#if feedback.type === 'success'}
-            <CheckCircle2 class="w-4 h-4 shrink-0 text-emerald-400" />
+            <CircleCheck class="w-4 h-4 shrink-0 text-emerald-400" />
           {:else}
-            <AlertCircle class="w-4 h-4 shrink-0 text-rose-400" />
+            <CircleAlert class="w-4 h-4 shrink-0 text-rose-400" />
           {/if}
           <span>{feedback.message}</span>
         </div>
@@ -383,7 +384,7 @@
     <!-- Registries Table / Empty State -->
     {#if isLoading}
       <div class="p-12 text-center rounded-2xl bg-[#12131c]/60 border border-white/[0.08]">
-        <Loader2 class="w-8 h-8 animate-spin mx-auto text-violet-400 mb-3" />
+        <LoaderCircle class="w-8 h-8 animate-spin mx-auto text-violet-400 mb-3" />
         <span class="text-xs text-slate-400 font-mono">Loading configured registries...</span>
       </div>
     {:else if registries.length === 0}
@@ -445,7 +446,7 @@
                   </td>
                   <td class="py-3.5 px-4 whitespace-nowrap">
                     <span class="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-mono">
-                      <CheckCircle2 class="w-3.5 h-3.5" />
+                      <CircleCheck class="w-3.5 h-3.5" />
                       Token Saved
                     </span>
                   </td>
@@ -456,14 +457,14 @@
                         class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition"
                         title="Edit Registry"
                       >
-                        <Edit3 class="w-3.5 h-3.5" />
+                        <PenLine class="w-3.5 h-3.5" />
                       </button>
                       <button
                         onclick={() => deleteTarget = reg}
                         class="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
                         title="Delete Registry"
                       >
-                        <Trash2 class="w-3.5 h-3.5" />
+                        <Trash class="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </td>
@@ -646,9 +647,9 @@
               : 'bg-rose-500/10 border-rose-500/30 text-rose-300'}"
           >
             {#if testResult.success}
-              <CheckCircle2 class="w-4 h-4 shrink-0 text-emerald-400" />
+              <CircleCheck class="w-4 h-4 shrink-0 text-emerald-400" />
             {:else}
-              <AlertCircle class="w-4 h-4 shrink-0 text-rose-400" />
+              <CircleAlert class="w-4 h-4 shrink-0 text-rose-400" />
             {/if}
             <span class="break-all">{testResult.message}</span>
           </div>
@@ -656,7 +657,7 @@
 
         {#if formError}
           <div class="p-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs flex items-center gap-2">
-            <AlertCircle class="w-4 h-4 shrink-0 text-rose-400" />
+            <CircleAlert class="w-4 h-4 shrink-0 text-rose-400" />
             <span>{formError}</span>
           </div>
         {/if}
@@ -670,7 +671,7 @@
             class="px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 hover:text-white border border-white/[0.08] text-xs font-medium transition flex items-center gap-1.5"
           >
             {#if isTesting}
-              <Loader2 class="w-3.5 h-3.5 animate-spin text-cyan-400" />
+              <LoaderCircle class="w-3.5 h-3.5 animate-spin text-cyan-400" />
               <span>Verifying...</span>
             {:else}
               <span>Test Connection</span>
@@ -692,7 +693,7 @@
               class="px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-[0_0_15px_rgba(124,58,237,0.35)] transition flex items-center gap-1.5"
             >
               {#if isSaving}
-                <Loader2 class="w-3.5 h-3.5 animate-spin" />
+                <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
                 <span>Saving...</span>
               {:else}
                 <Check class="w-3.5 h-3.5" />
@@ -711,7 +712,7 @@
   <div use:portal class="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150">
     <div class="w-full max-w-sm rounded-3xl bg-[#12131c] border border-rose-500/20 shadow-2xl p-6 text-center space-y-4">
       <div class="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto shadow-[0_0_20px_rgba(244,63,94,0.2)]">
-        <Trash2 class="w-6 h-6" />
+        <Trash class="w-6 h-6" />
       </div>
       <div>
         <h4 class="text-sm font-bold text-white">Delete Registry Credentials?</h4>
@@ -733,7 +734,7 @@
           class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-[0_0_15px_rgba(244,63,94,0.35)] transition flex items-center gap-1.5"
         >
           {#if isDeleting}
-            <Loader2 class="w-3.5 h-3.5 animate-spin" />
+            <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
             <span>Deleting...</span>
           {:else}
             <span>Delete Registry</span>

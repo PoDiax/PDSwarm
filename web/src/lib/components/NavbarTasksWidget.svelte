@@ -1,11 +1,11 @@
 <script lang="ts">
   import {
     Activity,
-    Loader2,
+    LoaderCircle,
     ChevronDown,
     Terminal,
     X,
-    CheckCircle2,
+    CircleCheck,
     Download,
     Cpu,
     Layers,
@@ -58,7 +58,7 @@
       aria-expanded={isOpen}
       title="{activeCount} background task(s) active"
     >
-      <Loader2 class="w-3.5 h-3.5 animate-spin text-cyan-400 shrink-0" />
+      <LoaderCircle class="w-3.5 h-3.5 animate-spin text-cyan-400 shrink-0" />
       <span class="font-mono text-[11px] font-semibold">{activeCount} {activeCount === 1 ? 'task' : 'tasks'}</span>
       <ChevronDown class="w-3 h-3 text-cyan-400/70 group-hover:text-cyan-300 transition-transform duration-200 {isOpen ? 'rotate-180' : ''}" />
     </button>

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/docker/docker/api/types"
@@ -126,5 +127,37 @@ func TestHandleUpdateContainerImage_NotFound(t *testing.T) {
 	// Since nonexistent container, expect 404 or 500 error, but never panic
 	if rec.Code != http.StatusNotFound && rec.Code != http.StatusInternalServerError {
 		t.Errorf("expected 404 or 500, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleRecreateContainer_Validation(t *testing.T) {
+	st := newTestStore(t)
+	cfg := &config.Config{NoAuth: true}
+	ds, err := docker.NewService("")
+	if err != nil {
+		t.Fatalf("failed to create docker service: %v", err)
+	}
+	defer ds.Close()
+
+	handler := api.SetupRouter(cfg, st, ds)
+
+	// Missing image in payload
+	req := httptest.NewRequest(http.MethodPost, "/api/containers/test-id/recreate", strings.NewReader(`{"name":"test"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for empty image, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Invalid JSON payload
+	reqBadJSON := httptest.NewRequest(http.MethodPost, "/api/containers/test-id/recreate", strings.NewReader(`{invalid}`))
+	reqBadJSON.Header.Set("Content-Type", "application/json")
+	recBadJSON := httptest.NewRecorder()
+	handler.ServeHTTP(recBadJSON, reqBadJSON)
+
+	if recBadJSON.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for bad json, got %d: %s", recBadJSON.Code, recBadJSON.Body.String())
 	}
 }

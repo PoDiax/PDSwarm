@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import {
+    onMount,
+    onDestroy } from 'svelte';
   import { Terminal } from '@xterm/xterm';
   import { FitAddon } from '@xterm/addon-fit';
   import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -7,7 +9,7 @@
   import {
     Terminal as TerminalIcon,
     RefreshCw,
-    Trash2,
+    Trash,
     Maximize2,
     Minimize2,
     Wifi,
@@ -342,7 +344,7 @@
         class="p-1.5 rounded-lg bg-[#12131c] hover:bg-white/10 text-slate-400 hover:text-white border border-white/[0.08] transition"
         title="Clear terminal screen"
       >
-        <Trash2 class="w-3.5 h-3.5" />
+        <Trash class="w-3.5 h-3.5" />
       </button>
 
       <!-- Reconnect -->

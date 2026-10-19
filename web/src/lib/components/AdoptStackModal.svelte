@@ -3,7 +3,7 @@
     ShieldCheck,
     ShieldAlert,
     X,
-    Loader2,
+    LoaderCircle,
     Copy,
     Check,
     FileText,
@@ -11,7 +11,7 @@
     Info,
     Sparkles,
     RefreshCw,
-    CheckCircle2,
+    CircleCheck,
   } from '@lucide/svelte';
   import { stackApi } from '../api';
   import type { Stack } from '../types';
@@ -253,7 +253,7 @@
           </div>
         {:else if pathsConverted}
           <div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-2 text-xs text-emerald-300">
-            <CheckCircle2 class="w-4 h-4 text-emerald-400 shrink-0" />
+            <CircleCheck class="w-4 h-4 text-emerald-400 shrink-0" />
             <span>All relative volume paths converted to absolute paths in <strong class="font-mono">{detectedComposeDir}</strong>.</span>
           </div>
         {/if}
@@ -320,7 +320,7 @@
           class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-600 hover:from-violet-500 hover:to-cyan-500 text-white text-xs font-semibold shadow-[0_0_20px_rgba(6,182,212,0.35)] border border-cyan-400/30 transition disabled:opacity-50 cursor-pointer"
         >
           {#if isSubmitting}
-            <Loader2 class="w-4 h-4 animate-spin text-cyan-200" />
+            <LoaderCircle class="w-4 h-4 animate-spin text-cyan-200" />
             <span>Adopting Stack...</span>
           {:else}
             <ShieldCheck class="w-4 h-4 text-cyan-300" />

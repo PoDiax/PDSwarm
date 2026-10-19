@@ -500,3 +500,150 @@ func HandleUpdateContainerImage(ds *docker.Service, st store.Store) http.Handler
 		})
 	}
 }
+
+// HandleRecreateContainer recreates an existing container with updated configuration in the background.
+func HandleRecreateContainer(ds *docker.Service, st store.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ds = dockerFromContext(r.Context(), ds)
+		if ds == nil {
+			respondJSONError(w, http.StatusServiceUnavailable, "docker service not available")
+			return
+		}
+
+		id := chi.URLParam(r, "id")
+		if strings.TrimSpace(id) == "" {
+			respondJSONError(w, http.StatusBadRequest, "container id is required")
+			return
+		}
+
+		var req docker.CreateContainerRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondJSONError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+
+		if err := req.Validate(); err != nil {
+			respondJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		inspectData, err := ds.InspectContainer(r.Context(), id)
+		if err != nil {
+			if client.IsErrNotFound(err) {
+				respondJSONError(w, http.StatusNotFound, "container not found")
+				return
+			}
+			respondJSONError(w, http.StatusInternalServerError, "failed to inspect container: "+err.Error())
+			return
+		}
+
+		cleanName := strings.TrimPrefix(inspectData.Name, "/")
+		if strings.TrimSpace(req.Name) == "" {
+			req.Name = cleanName
+		}
+		wasRunning := inspectData.State != nil && inspectData.State.Running
+		shouldStart := wasRunning
+		if req.AutoStart != nil {
+			shouldStart = *req.AutoStart
+		}
+
+		// Apply default log limits if not explicitly specified
+		if req.LogDriver == "" && len(req.LogOpts) == 0 && st != nil {
+			driver, _ := st.GetSetting("log_driver")
+			maxSize, _ := st.GetSetting("log_max_size")
+			maxFile, _ := st.GetSetting("log_max_file")
+			compress, _ := st.GetSetting("log_compress")
+
+			if driver == "" {
+				driver = "json-file"
+			}
+			if maxSize == "" {
+				maxSize = "10m"
+			}
+			if maxFile == "" {
+				maxFile = "3"
+			}
+
+			req.LogDriver = driver
+			req.LogOpts = map[string]string{
+				"max-size": maxSize,
+				"max-file": maxFile,
+			}
+			if compress == "true" {
+				req.LogOpts["compress"] = "true"
+			}
+		}
+
+		// Check private registry auth if image needs to be pulled
+		var authConfig string
+		if st != nil {
+			if regs, err := st.ListRegistries(); err == nil {
+				for _, reg := range regs {
+					if reg.URL != "" && strings.Contains(req.Image, strings.TrimPrefix(strings.TrimPrefix(reg.URL, "https://"), "http://")) {
+						authConfig = docker.EncodeRegistryAuth(reg.Username, reg.Password, reg.URL)
+						break
+					}
+				}
+			}
+		}
+
+		task := tasks.DefaultManager().Start(
+			tasks.TypeContainerRecreate,
+			fmt.Sprintf("Recreate container %s", cleanName),
+			cleanName,
+			func(ctx context.Context, t *tasks.Task) error {
+				t.SetProgress(15, "Stopping existing container...")
+				t.AppendLog(fmt.Sprintf("Stopping container %s (%s)...", cleanName, id))
+				_ = ds.StopContainer(ctx, id, 10)
+
+				t.SetProgress(35, "Removing old container...")
+				t.AppendLog("Removing old container " + cleanName)
+				if err := ds.RemoveContainer(ctx, id, true, false); err != nil {
+					return fmt.Errorf("failed to remove old container %s: %w", id, err)
+				}
+
+				t.SetProgress(60, fmt.Sprintf("Creating container %s...", req.Name))
+				t.AppendLog(fmt.Sprintf("Creating container %s with image %s", req.Name, req.Image))
+				newContainerID, err := ds.CreateContainer(ctx, req)
+				if err != nil && (strings.Contains(err.Error(), "No such image") || strings.Contains(err.Error(), "not found")) {
+					t.SetProgress(65, "Pulling image: "+req.Image)
+					t.AppendLog("Image not found locally, pulling: " + req.Image)
+					stream, pullErr := ds.PullImageStream(ctx, req.Image, authConfig)
+					if pullErr != nil {
+						return fmt.Errorf("failed to pull image %s: %w", req.Image, pullErr)
+					}
+					scanner := bufio.NewScanner(stream)
+					for scanner.Scan() {
+						t.AppendLog(scanner.Text())
+					}
+					_ = stream.Close()
+					if scanErr := scanner.Err(); scanErr != nil {
+						return fmt.Errorf("error reading pull output: %w", scanErr)
+					}
+					newContainerID, err = ds.CreateContainer(ctx, req)
+				}
+				if err != nil {
+					return fmt.Errorf("failed to create container %s: %w", req.Name, err)
+				}
+
+				if shouldStart {
+					t.SetProgress(85, "Starting container...")
+					t.AppendLog("Starting new container " + req.Name)
+					if err := ds.StartContainer(ctx, newContainerID); err != nil {
+						return fmt.Errorf("failed to start container %s: %w", req.Name, err)
+					}
+				}
+
+				t.SetProgress(100, "Completed")
+				t.AppendLog(fmt.Sprintf("Successfully recreated container %s", req.Name))
+				return nil
+			},
+		)
+
+		respondJSON(w, http.StatusAccepted, map[string]interface{}{
+			"task_id": task.ID,
+			"status":  "recreating",
+			"message": "container recreate initiated in background",
+		})
+	}
+}

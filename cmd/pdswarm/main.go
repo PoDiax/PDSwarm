@@ -16,6 +16,7 @@ import (
 
 	"github.com/podiax/pdswarm"
 	"github.com/podiax/pdswarm/internal/api"
+	"github.com/podiax/pdswarm/internal/audit"
 	"github.com/podiax/pdswarm/internal/config"
 	"github.com/podiax/pdswarm/internal/docker"
 	"github.com/podiax/pdswarm/internal/store"
@@ -30,6 +31,18 @@ func main() {
 	if cfg.ShowVersion {
 		fmt.Printf("PDSwarm v%s\n", config.Version)
 		os.Exit(0)
+	}
+
+	// 2. Initialize security audit logger for fail2ban / jails
+	auditLogger, err := audit.New(cfg.AuthLogPath, cfg.LogLevel, cfg.Port)
+	if err != nil {
+		log.Printf("[WARN] Error initializing security audit log at %s: %v", cfg.AuthLogPath, err)
+	} else {
+		defer auditLogger.Close()
+		audit.SetDefault(auditLogger)
+		if cfg.LogLevel != "off" {
+			log.Printf("[INFO] Security audit logging enabled at %s (level: %s)", cfg.AuthLogPath, cfg.LogLevel)
+		}
 	}
 
 	log.Printf("[INFO] Starting PDSwarm v%s...", config.Version)

@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/podiax/pdswarm/releases"><img src="https://img.shields.io/badge/release-v0.2.0-7c3aed?style=flat-square" alt="Release"></a>
+  <a href="https://github.com/PoDiax/PDSwarm/releases"><img src="https://img.shields.io/github/v/release/PoDiax/PDSwarm?style=flat-square&color=7c3aed" alt="GitHub Release"></a>
   <img src="https://img.shields.io/badge/go-1.24+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go 1.24+">
   <img src="https://img.shields.io/badge/frontend-Svelte%205-FF3E00?style=flat-square&logo=svelte&logoColor=white" alt="Svelte 5">
   <img src="https://img.shields.io/badge/binary-13MB%20standalone-10b981?style=flat-square" alt="Binary Size">
@@ -36,6 +36,7 @@ No database server needed (it uses embedded bbolt), no Node.js runtime on your h
 - **Browser Dockerfile Studio**: Write Dockerfiles in your browser with starter templates and build images with live streaming build logs.
 - **Multi-Host Management**: Switch between local socket and remote Docker hosts over TCP or TLS directly from the navbar.
 - **Private Registries**: Save credentials for Docker Hub, GitHub Container Registry (GHCR), Quay, or self-hosted Harbor instances with auto-authentication on pull.
+- **Security Audit Logs & Fail2ban Jails**: Dedicated authentication audit logging (`-auth-log`, `-log-level`) producing standardized CEF/Syslog auth events for fail2ban, CrowdSec, and FreeBSD/Linux jails.
 - **API Access Tokens**: Create scoped `pds_...` access tokens for automation, scripts, and CI/CD pipelines alongside standard multi-user login.
 
 <p align="center">
@@ -68,6 +69,9 @@ sudo systemctl status pdswarm
 # View live logs
 sudo journalctl -u pdswarm -f
 
+# View security audit logs (for fail2ban / jails)
+tail -f /var/log/pdswarm/auth.log
+
 # Check for updates manually right now
 sudo pdswarm-update
 
@@ -80,8 +84,11 @@ sudo /usr/local/bin/pdswarm --uninstall
 
 #### Custom install options:
 ```bash
-# Custom port and data directory
-curl -fsSL https://raw.githubusercontent.com/podiax/pdswarm/master/scripts/install.sh | sudo bash -s -- --port 8080 --data-dir /opt/pdswarm
+# Custom port, data directory, and security audit log path
+curl -fsSL https://raw.githubusercontent.com/podiax/pdswarm/master/scripts/install.sh | sudo bash -s -- --port 8080 --data-dir /opt/pdswarm --auth-log /var/log/pdswarm/auth.log
+
+# Set audit log level (auth, failures_only, all, off)
+curl -fsSL https://raw.githubusercontent.com/podiax/pdswarm/master/scripts/install.sh | sudo bash -s -- --log-level failures_only
 
 # Install without the daily auto-updater timer
 curl -fsSL https://raw.githubusercontent.com/podiax/pdswarm/master/scripts/install.sh | sudo bash -s -- --no-auto-update
@@ -100,6 +107,9 @@ docker run -d \
   -p 9000:9000 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v pdswarm_data:/data \
+  -v /var/log/pdswarm:/var/log/pdswarm \
+  -e PDSWARM_AUTH_LOG=/var/log/pdswarm/auth.log \
+  -e PDSWARM_LOG_LEVEL=auth \
   ghcr.io/podiax/pdswarm:latest
 ```
 
@@ -120,10 +130,13 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - pdswarm_data:/data
+      - /var/log/pdswarm:/var/log/pdswarm
     environment:
       - PDSWARM_HOST=0.0.0.0
       - PDSWARM_PORT=9000
       - PDSWARM_DATA_DIR=/data
+      - PDSWARM_AUTH_LOG=/var/log/pdswarm/auth.log
+      - PDSWARM_LOG_LEVEL=auth
 
 volumes:
   pdswarm_data:
@@ -146,13 +159,15 @@ PDSwarm works out of the box with sensible defaults, but you can configure anyth
 | `-host` | `PDSWARM_HOST` | `0.0.0.0` | Host IP to bind the HTTP server |
 | `-socket` | `DOCKER_HOST` | `/var/run/docker.sock` | Docker daemon UNIX socket or TCP/TLS URL |
 | `-data-dir` | `PDSWARM_DATA_DIR` | `./data` | Directory where the bbolt database is stored |
+| `-auth-log` | `PDSWARM_AUTH_LOG` | `/var/log/pdswarm/auth.log` | Security audit log file path for fail2ban / jails |
+| `-log-level` | `PDSWARM_LOG_LEVEL` | `auth` | Audit log level: `auth`, `failures_only`, `all`, or `off` |
 | `-no-auth` | `PDSWARM_NO_AUTH` | `false` | Disable authentication (useful for trusted LANs/tailnets) |
 | `-jwt-secret` | `PDSWARM_JWT_SECRET` | *(auto-generated)* | JWT signing secret (persisted across restarts) |
 | `-version`, `-v` | — | — | Print PDSwarm version and exit |
 
 Example running with flags:
 ```bash
-./pdswarm -port 8080 -data-dir /var/lib/pdswarm -socket /var/run/docker.sock
+./pdswarm -port 8080 -data-dir /var/lib/pdswarm -auth-log /var/log/pdswarm/auth.log -socket /var/run/docker.sock
 ```
 
 ---

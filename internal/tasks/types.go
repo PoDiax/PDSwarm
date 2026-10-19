@@ -21,14 +21,15 @@ const (
 type TaskType string
 
 const (
-	TypeImagePull       TaskType = "image_pull"
-	TypeImageBuild      TaskType = "image_build"
-	TypeContainerUpdate TaskType = "container_update"
-	TypeStackDeploy     TaskType = "stack_deploy"
-	TypeStackDown       TaskType = "stack_down"
-	TypeTemplateDeploy  TaskType = "template_deploy"
-	TypePrune           TaskType = "prune"
-	TypeGeneral         TaskType = "general"
+	TypeImagePull         TaskType = "image_pull"
+	TypeImageBuild        TaskType = "image_build"
+	TypeContainerUpdate   TaskType = "container_update"
+	TypeContainerRecreate TaskType = "container_recreate"
+	TypeStackDeploy       TaskType = "stack_deploy"
+	TypeStackDown         TaskType = "stack_down"
+	TypeTemplateDeploy    TaskType = "template_deploy"
+	TypePrune             TaskType = "prune"
+	TypeGeneral           TaskType = "general"
 )
 
 // Task represents a background job running independently of browser connections.

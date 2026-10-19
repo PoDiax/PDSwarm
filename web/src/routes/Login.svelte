@@ -4,7 +4,7 @@
     User as UserIcon,
     Eye,
     EyeOff,
-    AlertCircle,
+    CircleAlert,
     RefreshCw,
     ArrowRight,
   } from '@lucide/svelte';
@@ -78,7 +78,7 @@
 
     {#if errorMessage}
       <div class="mb-5 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-sm flex items-start gap-2.5 animate-in fade-in duration-150">
-        <AlertCircle class="w-4 h-4 mt-0.5 shrink-0 text-rose-400" />
+        <CircleAlert class="w-4 h-4 mt-0.5 shrink-0 text-rose-400" />
         <span class="leading-snug">{errorMessage}</span>
       </div>
     {/if}

@@ -1,12 +1,14 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import {
+    onMount,
+    onDestroy } from 'svelte';
   import {
     Activity,
     Cpu,
     HardDrive,
     Network,
     RefreshCw,
-    Sliders,
+    SlidersHorizontal,
     Layers,
     Clock,
     Zap,

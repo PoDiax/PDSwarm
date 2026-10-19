@@ -190,6 +190,7 @@ export interface CreateContainerRequest {
   memory_mb?: number;
   cpu_cores?: number;
   labels?: Record<string, string>;
+  auto_start?: boolean;
 }
 
 export interface CreateVolumeRequest {
@@ -601,7 +602,7 @@ export interface CreateTemplateRepoRequest {
 }
 
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
-export type TaskType = 'image_pull' | 'image_build' | 'container_update' | 'stack_deploy' | 'stack_down' | 'template_deploy' | 'prune' | 'general';
+export type TaskType = 'image_pull' | 'image_build' | 'container_update' | 'container_recreate' | 'stack_deploy' | 'stack_down' | 'template_deploy' | 'prune' | 'general';
 
 export interface BackgroundTask {
   id: string;
@@ -618,14 +619,34 @@ export interface BackgroundTask {
   finished_at?: string;
 }
 
+export interface ImageReleaseNote {
+  tag_name: string;
+  name: string;
+  published_at?: string;
+  html_url: string;
+  body?: string;
+}
+
 export interface ImageUpdateStatus {
   image_ref: string;
   status: 'up_to_date' | 'update_available' | 'not_found' | 'unknown';
   up_to_date: boolean;
   local_digest?: string;
   remote_digest?: string;
+  local_id?: string;
+  local_version?: string;
+  local_created?: string;
+  local_size?: number;
+  source_url?: string;
+  changelog_url?: string;
+  hub_url?: string;
+  releases?: ImageReleaseNote[];
   message: string;
   error?: string;
+}
+
+export interface CheckImageUpdatesBatchResponse {
+  results: Record<string, ImageUpdateStatus>;
 }
 
 export interface BuildImageRequest {
@@ -654,3 +675,36 @@ export interface UpdateLoggingConfigPayload {
   compress: boolean;
   write_daemon_file?: boolean;
 }
+
+export interface UpdateStatus {
+  current_version: string;
+  latest_version: string;
+  update_available: boolean;
+  release_url?: string;
+  release_notes?: string;
+  published_at?: string;
+  checked_at: string;
+  auto_update_enabled: boolean;
+  auto_update_supported: boolean;
+  install_type: 'systemd' | 'docker' | 'standalone';
+  timer_active?: boolean;
+  message?: string;
+}
+
+export interface SetAutoUpdateRequest {
+  enabled: boolean;
+}
+
+export interface ApplyUpdateResponse {
+  status: 'initiated' | 'manual' | 'up_to_date' | 'error';
+  message: string;
+}
+
+export interface AuditLogInfo {
+  path: string;
+  level: string;
+  entries: string[];
+  fail2ban_filter: string;
+  fail2ban_jail: string;
+}
+

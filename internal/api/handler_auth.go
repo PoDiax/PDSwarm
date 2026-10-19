@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/podiax/pdswarm/internal/audit"
 	"github.com/podiax/pdswarm/internal/auth"
 	"github.com/podiax/pdswarm/internal/config"
 	"github.com/podiax/pdswarm/internal/store"
@@ -125,6 +126,7 @@ func HandleAuthSetup(cfg *config.Config, st store.Store) http.HandlerFunc {
 			respondJSONError(w, http.StatusInternalServerError, "failed to create admin user: "+err.Error())
 			return
 		}
+		audit.Default().LogSetup(audit.ClientIP(r), user.Username)
 
 		secret := cfg.JWTSecret
 		if secret == "" {
@@ -164,11 +166,14 @@ func HandleAuthLogin(cfg *config.Config, st store.Store) http.HandlerFunc {
 			return
 		}
 
+		clientIP := audit.ClientIP(r)
 		user, err := st.GetUser(req.Username)
 		if err != nil || !auth.CheckPassword(req.Password, user.PasswordHash) {
+			audit.Default().LogLoginFailure(clientIP, req.Username, "invalid username or password", r.UserAgent())
 			respondJSONError(w, http.StatusUnauthorized, "invalid username or password")
 			return
 		}
+		audit.Default().LogLoginSuccess(clientIP, user.Username, r.UserAgent())
 
 		secret := cfg.JWTSecret
 		if secret == "" {
@@ -276,6 +281,7 @@ func HandleChangePassword(st store.Store) http.HandlerFunc {
 			respondJSONError(w, http.StatusInternalServerError, "failed to update password: "+err.Error())
 			return
 		}
+		audit.Default().LogPasswordChange(audit.ClientIP(r), user.Username)
 
 		respondJSON(w, http.StatusOK, map[string]string{"message": "password updated successfully"})
 	}

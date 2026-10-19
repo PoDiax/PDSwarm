@@ -4,24 +4,26 @@
     Square,
     RotateCw,
     Pause,
-    Trash2,
+    Trash,
     ExternalLink,
     Box,
     Skull,
     Eye,
     Plus,
-    Loader2,
+    LoaderCircle,
     Copy,
-    Sliders,
+    SlidersHorizontal,
     Layers,
     Sparkles,
-    ArrowUpCircle,
-    CheckCircle2,
+    CircleArrowUp,
+    CircleCheck,
     ArrowUpDown,
     ArrowUp,
     ArrowDown,
+    Globe,
   } from '@lucide/svelte';
   import { imageUpdateStore } from '../stores/imageUpdates.svelte';
+  import { getContainerCustomUrl, getPortOpenUrl, formatUrlBadge } from '../utils/portLink';
   import type { Container } from '../types';
 
   export type ContainerSortKey = 'name' | 'status' | 'image' | 'created';
@@ -108,6 +110,8 @@
   let someSelected = $derived(
     containers.some(c => selectedIds.includes(c.Id)) && !allSelected
   );
+
+
 
   function getCleanName(names?: string[]): string {
     if (!names || names.length === 0) return 'unnamed';
@@ -345,7 +349,7 @@
               </td>
 
               <!-- Container Name & Short ID -->
-              <td class="py-3.5 px-4 min-w-[180px]">
+              <td class="py-3.5 px-4">
                 <div class="flex items-center gap-2.5">
                   <div class="w-2 h-2 rounded-full shrink-0 {statusStyle.dot} {statusStyle.glow}"></div>
                   <div class="min-w-0">
@@ -381,7 +385,7 @@
               </td>
 
               <!-- Image -->
-              <td class="py-3.5 px-4 max-w-[220px]" onclick={(e) => e.stopPropagation()}>
+              <td class="py-3.5 px-4" onclick={(e) => e.stopPropagation()}>
                 <div class="space-y-1">
                   <span class="font-mono text-[11px] text-slate-300 truncate block" title={container.Image}>
                     {container.Image}
@@ -395,12 +399,12 @@
 
                     {#if isUpdating}
                       <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.25)] animate-pulse">
-                        <Loader2 class="w-2.5 h-2.5 animate-spin text-amber-400" />
+                        <LoaderCircle class="w-2.5 h-2.5 animate-spin text-amber-400" />
                         <span>Updating & Recreating...</span>
                       </span>
                     {:else if isChecking}
                       <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-                        <Loader2 class="w-2.5 h-2.5 animate-spin text-cyan-400" />
+                        <LoaderCircle class="w-2.5 h-2.5 animate-spin text-cyan-400" />
                         <span>Checking...</span>
                       </span>
                     {:else if update}
@@ -411,7 +415,7 @@
                           class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition shadow-[0_0_8px_rgba(245,158,11,0.25)] cursor-pointer"
                           title="New version available on registry! Click to update."
                         >
-                          <ArrowUpCircle class="w-2.5 h-2.5 text-amber-400" />
+                          <CircleArrowUp class="w-2.5 h-2.5 text-amber-400" />
                           <span>Update Available</span>
                         </button>
                       {:else if update.status === 'up_to_date'}
@@ -419,7 +423,7 @@
                           class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
                           title="Image is up to date with registry"
                         >
-                          <CheckCircle2 class="w-2.5 h-2.5 text-emerald-400" />
+                          <CircleCheck class="w-2.5 h-2.5 text-emerald-400" />
                           <span>Up to date</span>
                         </span>
                       {/if}
@@ -440,31 +444,48 @@
 
               <!-- Ports -->
               <td class="py-3.5 px-4 whitespace-nowrap" onclick={(e) => e.stopPropagation()}>
-                {#if container.Ports && container.Ports.length > 0}
-                  <div class="flex flex-wrap items-center gap-1.5 max-w-[220px]">
-                    {#each container.Ports.slice(0, 3) as port}
-                      {@const hasPublic = port.PublicPort !== undefined && port.PublicPort !== null}
-                      {#if hasPublic}
-                        <a
-                          href="http://localhost:{port.PublicPort}"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-mono bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/25 transition group/port"
-                          title="Open http://localhost:{port.PublicPort}"
-                        >
-                          <span>{port.PublicPort}:{port.PrivatePort}/{port.Type}</span>
-                          <ExternalLink class="w-2.5 h-2.5 opacity-60 group-hover/port:opacity-100" />
-                        </a>
-                      {:else}
-                        <span class="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-mono bg-white/[0.04] text-slate-400 border border-white/[0.08]">
-                          {port.PrivatePort}/{port.Type}
+                {#if getContainerCustomUrl(container.Labels) || (container.Ports && container.Ports.length > 0)}
+                  {@const customAppUrl = getContainerCustomUrl(container.Labels)}
+                  <div class="flex flex-wrap items-center gap-1.5 max-w-[260px]">
+                    {#if customAppUrl}
+                      <a
+                        href={customAppUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-mono bg-violet-500/15 hover:bg-violet-500/25 text-violet-300 border border-violet-500/30 transition group/applink"
+                        title="Open App: {customAppUrl}"
+                      >
+                        <Globe class="w-2.5 h-2.5 text-violet-400 group-hover/applink:text-violet-200" />
+                        <span class="max-w-[130px] truncate">{formatUrlBadge(customAppUrl)}</span>
+                        <ExternalLink class="w-2.5 h-2.5 opacity-60 group-hover/applink:opacity-100" />
+                      </a>
+                    {/if}
+
+                    {#if container.Ports && container.Ports.length > 0}
+                      {#each container.Ports.slice(0, 3) as port}
+                        {#if port.PublicPort !== undefined && port.PublicPort !== null}
+                          {@const portUrl = getPortOpenUrl(port.PublicPort, container.Labels)}
+                          <a
+                            href={portUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-mono bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/25 transition group/port"
+                            title="Open {portUrl}"
+                          >
+                            <span>{port.PublicPort}:{port.PrivatePort}/{port.Type}</span>
+                            <ExternalLink class="w-2.5 h-2.5 opacity-60 group-hover/port:opacity-100" />
+                          </a>
+                        {:else}
+                          <span class="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-mono bg-white/[0.04] text-slate-400 border border-white/[0.08]">
+                            {port.PrivatePort}/{port.Type}
+                          </span>
+                        {/if}
+                      {/each}
+                      {#if container.Ports.length > 3}
+                        <span class="text-[10px] font-mono text-slate-500" title={container.Ports.map(p => `${p.PublicPort ? p.PublicPort + ':' : ''}${p.PrivatePort}/${p.Type}`).join(', ')}>
+                          +{container.Ports.length - 3} more
                         </span>
                       {/if}
-                    {/each}
-                    {#if container.Ports.length > 3}
-                      <span class="text-[10px] font-mono text-slate-500" title={container.Ports.map(p => `${p.PublicPort ? p.PublicPort + ':' : ''}${p.PrivatePort}/${p.Type}`).join(', ')}>
-                        +{container.Ports.length - 3} more
-                      </span>
                     {/if}
                   </div>
                 {:else}
@@ -485,7 +506,7 @@
                 <div class="inline-flex items-center gap-1 bg-[#0a0b10]/60 p-1 rounded-xl border border-white/[0.06]">
                   {#if currentAction}
                     <div class="px-2 py-1 flex items-center gap-1.5 text-xs text-violet-400 font-mono">
-                      <Loader2 class="w-3.5 h-3.5 animate-spin" />
+                      <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
                       <span class="capitalize text-[10px]">{currentAction}...</span>
                     </div>
                   {:else}
@@ -537,7 +558,7 @@
                       class="p-1.5 rounded-lg hover:bg-violet-500/20 text-slate-400 hover:text-violet-300 transition"
                       title="Edit & Reconfigure Container"
                     >
-                      <Sliders class="w-3.5 h-3.5" />
+                      <SlidersHorizontal class="w-3.5 h-3.5" />
                     </button>
 
                     <!-- Update Image & Recreate Container -->
@@ -551,9 +572,9 @@
                         title="Update container with latest image and recreate"
                       >
                         {#if isUpdating}
-                          <Loader2 class="w-3.5 h-3.5 animate-spin text-amber-400" />
+                          <LoaderCircle class="w-3.5 h-3.5 animate-spin text-amber-400" />
                         {:else}
-                          <ArrowUpCircle class="w-3.5 h-3.5 text-amber-400" />
+                          <CircleArrowUp class="w-3.5 h-3.5 text-amber-400" />
                         {/if}
                       </button>
                     {/if}
@@ -608,7 +629,7 @@
                       class="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition"
                       title="Remove Container"
                     >
-                      <Trash2 class="w-3.5 h-3.5" />
+                      <Trash class="w-3.5 h-3.5" />
                     </button>
                   {/if}
                 </div>

@@ -1,19 +1,22 @@
 <script lang="ts">
-  import { onDestroy, tick, untrack } from 'svelte';
+  import {
+    onDestroy,
+    tick,
+    untrack } from 'svelte';
   import {
     FileText,
     Search,
     Download,
     Copy,
     Check,
-    Trash2,
+    Trash,
     RefreshCw,
     ArrowDown,
     SlidersHorizontal,
     Wifi,
     WifiOff,
-    CheckCircle2,
-    AlertCircle,
+    CircleCheck,
+    CircleAlert,
     Clock,
   } from '@lucide/svelte';
   import { getWebSocketUrl } from '../api';
@@ -553,7 +556,7 @@
         class="p-1.5 rounded-lg bg-[#12131c] hover:bg-white/10 text-slate-400 hover:text-white border border-white/[0.08] transition"
         title="Clear current view"
       >
-        <Trash2 class="w-3.5 h-3.5" />
+        <Trash class="w-3.5 h-3.5" />
       </button>
 
       <!-- Copy logs -->
@@ -594,7 +597,7 @@
 
   {#if regexError}
     <div class="px-4 py-1.5 bg-rose-500/10 border-b border-rose-500/30 text-rose-300 text-xs font-mono flex items-center gap-2">
-      <AlertCircle class="w-3.5 h-3.5 text-rose-400 shrink-0" />
+      <CircleAlert class="w-3.5 h-3.5 text-rose-400 shrink-0" />
       <span>{regexError}</span>
     </div>
   {/if}

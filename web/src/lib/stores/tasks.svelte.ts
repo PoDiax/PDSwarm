@@ -11,12 +11,18 @@ class TasksStore {
     this.tasks.filter((t) => t.status === 'running' || t.status === 'pending')
   );
 
-  // Recent completed/failed tasks (limit to 1 recent operation)
-  recentTasks = $derived(
-    this.tasks
-      .filter((t) => t.status !== 'running' && t.status !== 'pending')
-      .slice(0, 1)
-  );
+  // Recent completed/failed tasks (completed within last 2 minutes)
+  recentTasks = $derived.by(() => {
+    const cutoff = Date.now() - 2 * 60 * 1000;
+    return this.tasks
+      .filter((t) => {
+        if (t.status === 'running' || t.status === 'pending') return false;
+        if (!t.finished_at) return true;
+        const finishedTime = new Date(t.finished_at).getTime();
+        return !isNaN(finishedTime) && finishedTime > cutoff;
+      })
+      .slice(0, 2);
+  });
 
   // Count of currently active operations
   activeCount = $derived(this.activeTasks.length);

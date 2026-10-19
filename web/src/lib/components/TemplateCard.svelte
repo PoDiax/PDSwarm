@@ -1,5 +1,10 @@
 <script lang="ts">
-  import { Rocket, Box, Globe, ExternalLink } from '@lucide/svelte';
+  import {
+    Rocket,
+    Box,
+    Globe,
+    ExternalLink,
+  } from '@lucide/svelte';
   import type { Template } from '../types';
 
   interface Props {

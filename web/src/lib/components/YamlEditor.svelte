@@ -1,14 +1,16 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import {
+    onMount,
+    tick } from 'svelte';
   import {
     Copy,
     Check,
-    AlertCircle,
-    CheckCircle2,
+    CircleAlert,
+    CircleCheck,
     Code2,
     FileCode,
     Sparkles,
-    Trash2,
+    Trash,
     AlertTriangle,
   } from '@lucide/svelte';
 
@@ -458,7 +460,7 @@
             : 'bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25'}"
         >
           {#if validationResult.type === 'error'}
-            <AlertCircle class="w-3.5 h-3.5 text-rose-400 shrink-0" />
+            <CircleAlert class="w-3.5 h-3.5 text-rose-400 shrink-0" />
           {:else}
             <AlertTriangle class="w-3.5 h-3.5 text-amber-400 shrink-0" />
           {/if}
@@ -469,7 +471,7 @@
         <div
           class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono bg-emerald-500/10 text-emerald-300 border border-emerald-500/20"
         >
-          <CheckCircle2 class="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          <CircleCheck class="w-3.5 h-3.5 text-emerald-400 shrink-0" />
           <span>Valid Compose YAML</span>
         </div>
       {/if}
@@ -490,7 +492,7 @@
           title="Clear editor contents"
           class="p-1 rounded-lg bg-white/[0.04] hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-white/[0.06] transition"
         >
-          <Trash2 class="w-3.5 h-3.5" />
+          <Trash class="w-3.5 h-3.5" />
         </button>
       {/if}
 

@@ -200,6 +200,11 @@ func SetupRouterWithRegistry(cfg *config.Config, st store.Store, ds *docker.Serv
 			protected.Get("/system/host-paths", HandleSuggestHostPaths(ds))
 			protected.Get("/system/logging", HandleGetLoggingConfig(ds, st))
 			protected.Put("/system/logging", HandleUpdateLoggingConfig(ds, st))
+			protected.Get("/system/update", HandleGetUpdateStatus(st))
+			protected.Post("/system/update/check", HandleCheckUpdate(st))
+			protected.Put("/system/update/auto", HandleSetAutoUpdate(st))
+			protected.Post("/system/update/apply", HandleApplyUpdate(st))
+			protected.Get("/system/audit-logs", HandleGetAuditLogs(cfg))
 
 			// Containers
 			protected.Get("/containers", HandleListContainers(ds))
@@ -213,6 +218,7 @@ func SetupRouterWithRegistry(cfg *config.Config, st store.Store, ds *docker.Serv
 			protected.Post("/containers/{id}/unpause", HandleUnpauseContainer(ds))
 			protected.Post("/containers/{id}/kill", HandleKillContainer(ds))
 			protected.Post("/containers/{id}/update-image", HandleUpdateContainerImage(ds, st))
+			protected.Post("/containers/{id}/recreate", HandleRecreateContainer(ds, st))
 			protected.Delete("/containers/{id}", HandleDeleteContainer(ds))
 
 			// Container Files
@@ -236,6 +242,7 @@ func SetupRouterWithRegistry(cfg *config.Config, st store.Store, ds *docker.Serv
 			protected.Get("/images", HandleListImages(ds))
 			protected.Post("/images/pull", HandlePullImage(st, ds))
 			protected.Post("/images/check-update", HandleCheckImageUpdate(st, ds))
+			protected.Post("/images/check-updates", HandleCheckImageUpdatesBatch(st, ds))
 			protected.Get("/images/{id}/check-update", HandleCheckImageUpdate(st, ds))
 			protected.Post("/images/build", HandleBuildImage(ds))
 			protected.Post("/images/prune", HandlePruneImages(ds))

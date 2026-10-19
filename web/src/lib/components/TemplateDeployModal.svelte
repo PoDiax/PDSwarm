@@ -1,11 +1,13 @@
 <script lang="ts">
-  import { untrack, onMount } from 'svelte';
+  import {
+    untrack,
+    onMount } from 'svelte';
   import {
     X,
     Rocket,
-    AlertCircle,
+    CircleAlert,
     TriangleAlert,
-    Loader2,
+    LoaderCircle,
     Eye,
     EyeOff,
     Code,
@@ -23,7 +25,7 @@
     HardDrive,
     Pencil,
     RotateCcw,
-    Sliders,
+    SlidersHorizontal,
     Globe,
     Radio,
   } from '@lucide/svelte';
@@ -894,7 +896,7 @@
           ? 'border-violet-500 text-violet-400 bg-violet-500/5'
           : 'border-transparent text-slate-400 hover:text-slate-200'}"
       >
-        <Sliders class="w-3.5 h-3.5" />
+        <SlidersHorizontal class="w-3.5 h-3.5" />
         <span>Configuration</span>
       </button>
 
@@ -925,7 +927,7 @@
         <div
           class="flex items-start gap-3 p-3.5 mb-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs animate-in fade-in"
         >
-          <AlertCircle class="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+          <CircleAlert class="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
           <div class="flex-1 font-mono break-all">{error}</div>
         </div>
       {/if}
@@ -1412,7 +1414,7 @@
               }}
             >
               <div class="flex items-center gap-2.5">
-                <Sliders class="w-4 h-4 text-violet-400" />
+                <SlidersHorizontal class="w-4 h-4 text-violet-400" />
                 <h3 class="text-xs font-semibold text-slate-200 uppercase tracking-wider">
                   Environment Configuration
                 </h3>

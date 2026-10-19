@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/podiax/pdswarm/internal/audit"
 	"github.com/podiax/pdswarm/internal/store"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -95,6 +96,7 @@ func AuthMiddleware(secret string, noAuth bool, tokenValidator ...TokenValidator
 			}
 
 			if tokenStr == "" {
+				audit.Default().LogUnauthorized(audit.ClientIP(r), r.URL.Path, "missing authentication token")
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
 			}
@@ -102,11 +104,13 @@ func AuthMiddleware(secret string, noAuth bool, tokenValidator ...TokenValidator
 			// Support API tokens (format: pds_...)
 			if strings.HasPrefix(tokenStr, "pds_") {
 				if validator == nil {
+					audit.Default().LogUnauthorized(audit.ClientIP(r), r.URL.Path, "api token validator not configured")
 					http.Error(w, `{"error":"api token authentication not configured"}`, http.StatusUnauthorized)
 					return
 				}
 				tok, err := validator.ValidateToken(tokenStr)
 				if err != nil {
+					audit.Default().LogUnauthorized(audit.ClientIP(r), r.URL.Path, "invalid or expired api token")
 					http.Error(w, `{"error":"invalid or expired token"}`, http.StatusUnauthorized)
 					return
 				}
@@ -125,6 +129,7 @@ func AuthMiddleware(secret string, noAuth bool, tokenValidator ...TokenValidator
 
 			claims, err := ValidateJWT(tokenStr, secret)
 			if err != nil {
+				audit.Default().LogUnauthorized(audit.ClientIP(r), r.URL.Path, "invalid or expired jwt token")
 				http.Error(w, `{"error":"invalid or expired token"}`, http.StatusUnauthorized)
 				return
 			}

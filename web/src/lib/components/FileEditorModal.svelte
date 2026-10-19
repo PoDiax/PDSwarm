@@ -1,13 +1,15 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import {
+    onMount,
+    tick } from 'svelte';
   import {
     FileCode,
     Save,
     Download,
     X,
-    Loader2,
-    AlertCircle,
-    CheckCircle2,
+    LoaderCircle,
+    CircleAlert,
+    CircleCheck,
     Copy,
     Check,
     FileText,
@@ -415,7 +417,7 @@
     {#if error}
       <div class="px-5 py-2.5 bg-rose-500/10 border-b border-rose-500/25 flex items-center justify-between text-xs text-rose-300">
         <div class="flex items-center gap-2">
-          <AlertCircle class="w-4 h-4 text-rose-400 shrink-0" />
+          <CircleAlert class="w-4 h-4 text-rose-400 shrink-0" />
           <span>{error}</span>
         </div>
         <button
@@ -428,7 +430,7 @@
       </div>
     {:else if successMsg}
       <div class="px-5 py-2 bg-emerald-500/10 border-b border-emerald-500/25 flex items-center gap-2 text-xs text-emerald-300">
-        <CheckCircle2 class="w-4 h-4 text-emerald-400 shrink-0" />
+        <CircleCheck class="w-4 h-4 text-emerald-400 shrink-0" />
         <span>{successMsg}</span>
       </div>
     {/if}
@@ -437,7 +439,7 @@
     <div class="relative flex-1 flex overflow-hidden bg-[#0a0b10]">
       {#if isLoading}
         <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0a0b10]/90 z-20">
-          <Loader2 class="w-8 h-8 animate-spin text-cyan-400" />
+          <LoaderCircle class="w-8 h-8 animate-spin text-cyan-400" />
           <span class="text-xs font-mono text-slate-300">Reading container file...</span>
         </div>
       {/if}
@@ -512,7 +514,7 @@
           class="px-5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs font-semibold shadow-[0_0_15px_rgba(124,58,237,0.4)] transition inline-flex items-center gap-2"
         >
           {#if isSaving}
-            <Loader2 class="w-3.5 h-3.5 animate-spin" />
+            <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
             <span>Saving...</span>
           {:else}
             <Save class="w-3.5 h-3.5" />
