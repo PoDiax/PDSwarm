@@ -43,13 +43,24 @@ const (
 	tokenTTL        = 24 * time.Hour
 )
 
-func setAuthCookie(w http.ResponseWriter, token string, expires time.Time) {
+func isRequestHTTPS(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
+func setAuthCookie(w http.ResponseWriter, r *http.Request, token string, expires time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     tokenCookieName,
 		Value:    token,
 		Path:     "/",
 		Expires:  expires,
 		HttpOnly: true,
+		Secure:   isRequestHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 }
@@ -140,7 +151,7 @@ func HandleAuthSetup(cfg *config.Config, st store.Store) http.HandlerFunc {
 			return
 		}
 
-		setAuthCookie(w, token, expires)
+		setAuthCookie(w, r, token, expires)
 		respondJSON(w, http.StatusOK, AuthResponse{
 			Token: token,
 			User: UserInfoDTO{
@@ -187,7 +198,7 @@ func HandleAuthLogin(cfg *config.Config, st store.Store) http.HandlerFunc {
 			return
 		}
 
-		setAuthCookie(w, token, expires)
+		setAuthCookie(w, r, token, expires)
 		respondJSON(w, http.StatusOK, AuthResponse{
 			Token: token,
 			User: UserInfoDTO{

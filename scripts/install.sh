@@ -23,6 +23,8 @@ HOST="${HOST:-$DEFAULT_HOST}"
 DATA_DIR="${DATA_DIR:-$DEFAULT_DATA_DIR}"
 AUTH_LOG="${AUTH_LOG:-}"
 LOG_LEVEL="${LOG_LEVEL:-$DEFAULT_LOG_LEVEL}"
+TRUSTED_PROXIES="${TRUSTED_PROXIES:-}"
+ALLOWED_ORIGINS="${ALLOWED_ORIGINS:-}"
 ENABLE_AUTO_UPDATE=true
 LOCAL_INSTALL=false
 DRY_RUN=false
@@ -69,6 +71,14 @@ while [[ $# -gt 0 ]]; do
       LOG_LEVEL="$2"
       shift 2
       ;;
+    --trusted-proxies)
+      TRUSTED_PROXIES="$2"
+      shift 2
+      ;;
+    --allowed-origins)
+      ALLOWED_ORIGINS="$2"
+      shift 2
+      ;;
     --no-auto-update)
       ENABLE_AUTO_UPDATE=false
       shift
@@ -90,13 +100,15 @@ while [[ $# -gt 0 ]]; do
       echo "Usage: sudo ./install.sh [options]"
       echo ""
       echo "Options:"
-      echo "  --port <port>        Port to bind PDSwarm (default: 9000)"
-      echo "  --host <host>        Host to bind PDSwarm (default: 0.0.0.0)"
-      echo "  --data-dir <path>    Data directory (default: /var/lib/pdswarm)"
-      echo "  --socket <path>      Container engine socket (default: /var/run/docker.sock or /run/podman/podman.sock)"
-      echo "  --auth-log <path>    Path to security/auth audit log file for fail2ban (default: <data-dir>/auth.log)"
-      echo "  --log-level <level>  Audit log level: auth, failures_only, or off (default: auth)"
-      echo "  --no-auto-update     Disable daily auto-update timer"
+      echo "  --port <port>             Port to bind PDSwarm (default: 9000)"
+      echo "  --host <host>             Host to bind PDSwarm (default: 0.0.0.0)"
+      echo "  --data-dir <path>         Data directory (default: /var/lib/pdswarm)"
+      echo "  --socket <path>           Container engine socket (default: /var/run/docker.sock or /run/podman/podman.sock)"
+      echo "  --auth-log <path>         Path to security/auth audit log file for fail2ban (default: <data-dir>/auth.log)"
+      echo "  --log-level <level>       Audit log level: auth, failures_only, or off (default: auth)"
+      echo "  --trusted-proxies <cidrs> Comma-separated trusted reverse proxy CIDRs/IPs"
+      echo "  --allowed-origins <urls>  Comma-separated allowed CORS/WebSocket origins (default: same-origin only)"
+      echo "  --no-auto-update          Disable daily auto-update timer"
       echo "  --local              Install from local ./pdswarm binary instead of GitHub"
       echo "  --dry-run            Simulate installation without making system changes"
       echo "  --uninstall          Stop services and remove PDSwarm from system"
@@ -288,6 +300,14 @@ fi
 
 # Step 3: Install Systemd Service
 log_info "Configuring systemd service (${SERVICE_NAME})..."
+EXEC_START="${INSTALL_BIN} -data-dir ${DATA_DIR} -host ${HOST} -port ${PORT} -socket ${DOCKER_SOCK} -auth-log ${AUTH_LOG} -log-level ${LOG_LEVEL}"
+if [[ -n "${TRUSTED_PROXIES}" ]]; then
+  EXEC_START="${EXEC_START} -trusted-proxies ${TRUSTED_PROXIES}"
+fi
+if [[ -n "${ALLOWED_ORIGINS}" ]]; then
+  EXEC_START="${EXEC_START} -allowed-origins ${ALLOWED_ORIGINS}"
+fi
+
 cat <<EOF > "/etc/systemd/system/${SERVICE_NAME}"
 [Unit]
 Description=PDSwarm - Lightweight Docker & Compose Web Management
@@ -299,7 +319,7 @@ Wants=network-online.target docker.service podman.socket
 Type=simple
 User=root
 WorkingDirectory=${DATA_DIR}
-ExecStart=${INSTALL_BIN} -data-dir ${DATA_DIR} -host ${HOST} -port ${PORT} -socket ${DOCKER_SOCK} -auth-log ${AUTH_LOG} -log-level ${LOG_LEVEL}
+ExecStart=${EXEC_START}
 Restart=always
 RestartSec=5s
 LimitNOFILE=65535

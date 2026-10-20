@@ -63,25 +63,22 @@ func TestAuditLogger_FileCreationAndLevels(t *testing.T) {
 }
 
 func TestClientIP(t *testing.T) {
-	// Direct remote addr
+	// Direct remote addr with port
 	req1 := httptest.NewRequest(http.MethodGet, "/", nil)
 	req1.RemoteAddr = "192.168.1.50:54321"
 	if ip := audit.ClientIP(req1); ip != "192.168.1.50" {
 		t.Errorf("expected 192.168.1.50, got %s", ip)
 	}
 
-	// X-Forwarded-For
+	// Remote addr without port
 	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
-	req2.RemoteAddr = "127.0.0.1:4444"
-	req2.Header.Set("X-Forwarded-For", "203.0.113.195, 70.41.3.18")
+	req2.RemoteAddr = "203.0.113.195"
 	if ip := audit.ClientIP(req2); ip != "203.0.113.195" {
-		t.Errorf("expected 203.0.113.195 from XFF, got %s", ip)
+		t.Errorf("expected 203.0.113.195, got %s", ip)
 	}
 
-	// Cloudflare
-	req3 := httptest.NewRequest(http.MethodGet, "/", nil)
-	req3.Header.Set("CF-Connecting-IP", "198.51.100.42")
-	if ip := audit.ClientIP(req3); ip != "198.51.100.42" {
-		t.Errorf("expected 198.51.100.42 from CF, got %s", ip)
+	// Nil request
+	if ip := audit.ClientIP(nil); ip != "unknown" {
+		t.Errorf("expected unknown, got %s", ip)
 	}
 }

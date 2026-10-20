@@ -8,10 +8,15 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - pdswarm_data:/data
+      - /var/log/pdswarm:/var/log/pdswarm
     environment:
       - PDSWARM_HOST=0.0.0.0
       - PDSWARM_PORT=9000
       - PDSWARM_DATA_DIR=/data
+      - PDSWARM_AUTH_LOG=/var/log/pdswarm/auth.log
+      - PDSWARM_LOG_LEVEL=auth
+      # - PDSWARM_TRUSTED_PROXIES=127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1/128
+      # - PDSWARM_ALLOWED_ORIGINS=https://dashboard.example.com
 
 volumes:
   pdswarm_data:

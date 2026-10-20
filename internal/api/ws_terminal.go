@@ -33,9 +33,7 @@ func HandleContainerExecWS(s *docker.Service) http.HandlerFunc {
 			return
 		}
 
-		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-			InsecureSkipVerify: true,
-		})
+		c, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}

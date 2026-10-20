@@ -90,6 +90,12 @@ curl -fsSL https://raw.githubusercontent.com/podiax/pdswarm/master/scripts/insta
 # Set audit log level (auth, failures_only, all, off)
 curl -fsSL https://raw.githubusercontent.com/podiax/pdswarm/master/scripts/install.sh | sudo bash -s -- --log-level failures_only
 
+# Custom trusted reverse proxy CIDRs/IPs (for Cloudflare edge, upstream load balancers, etc.)
+curl -fsSL https://raw.githubusercontent.com/podiax/pdswarm/master/scripts/install.sh | sudo bash -s -- --trusted-proxies "127.0.0.1/32,172.16.0.0/12,192.168.1.0/24"
+
+# Allow cross-origin requests or external dashboard domains (CORS)
+curl -fsSL https://raw.githubusercontent.com/podiax/pdswarm/master/scripts/install.sh | sudo bash -s -- --allowed-origins "https://dashboard.example.com"
+
 # Install without the daily auto-updater timer
 curl -fsSL https://raw.githubusercontent.com/podiax/pdswarm/master/scripts/install.sh | sudo bash -s -- --no-auto-update
 ```
@@ -110,6 +116,8 @@ docker run -d \
   -v /var/log/pdswarm:/var/log/pdswarm \
   -e PDSWARM_AUTH_LOG=/var/log/pdswarm/auth.log \
   -e PDSWARM_LOG_LEVEL=auth \
+  -e PDSWARM_TRUSTED_PROXIES=127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1/128 \
+  # -e PDSWARM_ALLOWED_ORIGINS=https://dashboard.example.com \
   ghcr.io/podiax/pdswarm:latest
 ```
 
@@ -137,6 +145,8 @@ services:
       - PDSWARM_DATA_DIR=/data
       - PDSWARM_AUTH_LOG=/var/log/pdswarm/auth.log
       - PDSWARM_LOG_LEVEL=auth
+      # - PDSWARM_TRUSTED_PROXIES=127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1/128
+      # - PDSWARM_ALLOWED_ORIGINS=https://dashboard.example.com
 
 volumes:
   pdswarm_data:
@@ -161,14 +171,46 @@ PDSwarm works out of the box with sensible defaults, but you can configure anyth
 | `-data-dir` | `PDSWARM_DATA_DIR` | `./data` | Directory where the bbolt database is stored |
 | `-auth-log` | `PDSWARM_AUTH_LOG` | `/var/log/pdswarm/auth.log` | Security audit log file path for fail2ban / jails |
 | `-log-level` | `PDSWARM_LOG_LEVEL` | `auth` | Audit log level: `auth`, `failures_only`, `all`, or `off` |
+| `-trusted-proxies` | `PDSWARM_TRUSTED_PROXIES` | `127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1/128` | Comma-separated trusted reverse proxy CIDRs/IPs |
+| `-allowed-origins` | `PDSWARM_ALLOWED_ORIGINS` | *(empty)* | Comma-separated allowed CORS & WebSocket origins (empty = same-origin only) |
 | `-no-auth` | `PDSWARM_NO_AUTH` | `false` | Disable authentication (useful for trusted LANs/tailnets) |
 | `-jwt-secret` | `PDSWARM_JWT_SECRET` | *(auto-generated)* | JWT signing secret (persisted across restarts) |
 | `-version`, `-v` | — | — | Print PDSwarm version and exit |
+
+> For production reverse proxy setups (Cloudflare Tunnels, Nginx, Caddy, Traefik) and IP spoofing prevention, see the [**Reverse Proxy & Security Guide**](docs/reverse-proxies.md).
 
 Example running with flags:
 ```bash
 ./pdswarm -port 8080 -data-dir /var/lib/pdswarm -auth-log /var/log/pdswarm/auth.log -socket /var/run/docker.sock
 ```
+
+---
+
+## Security Architecture
+
+PDSwarm provides robust, multi-layer security protections out of the box:
+
+### 1. Cross-Origin Resource Sharing (CORS) & Browser Protection
+* **Default Same-Origin Policy**: By default, `AllowedOrigins` is empty. The backend strictly forbids cross-origin browser requests, preventing external websites from reading API responses or issuing authenticated requests using your browser session.
+* **External Dashboards / Portals**: If you run a custom frontend or separate dashboard that consumes PDSwarm, specify your allowed domains via `-allowed-origins` or `PDSWARM_ALLOWED_ORIGINS="https://dashboard.example.com"`.
+
+### 2. Cross-Site Request Forgery (CSRF) & Cookie Hardening
+* **SameSite Cookie Isolation**: Session cookies (`pdswarm_token`) use `SameSite=Lax` and `HttpOnly`, blocking third-party websites from attaching cookies on cross-origin requests.
+* **Automatic HTTPS / Secure Cookie Flag**: When PDSwarm is accessed over HTTPS (or behind an SSL-terminating reverse proxy setting `X-Forwarded-Proto: https`), cookies automatically enforce the `Secure` flag, preventing transmission over unencrypted connections.
+
+### 3. Cross-Site WebSocket Hijacking (CSWSH) Defense
+* Live container terminals (`/ws/containers/{id}/exec`), real-time log viewers (`/logs`), and metrics streams (`/stats`) strictly validate that incoming `Origin` headers match the target `Host` (or an explicitly allowed origin), blocking rogue websites from hijacking interactive shells.
+
+### 4. Anti-IP Spoofing & Fail2ban / CrowdSec Accuracy
+* When sitting behind reverse proxies (Cloudflare, Nginx, Traefik, Caddy), client IPs are resolved from forwarding headers **only** when the immediate TCP connection originates from a trusted proxy CIDR (`-trusted-proxies`).
+* If an attacker attempts to spoof `X-Forwarded-For` or `CF-Connecting-IP` from an untrusted network, the headers are ignored and the real IP is recorded in `/var/log/pdswarm/auth.log`, ensuring jail bans (Fail2ban/CrowdSec) target the true attacker.
+
+### 5. Role-Based Access Control (RBAC)
+* Endpoints strictly enforce permissions across **Admin**, **Operator**, and **Viewer** roles:
+  * **Admin**: User management, environment configuration, system updates, and security logs.
+  * **Operator**: Container, stack, image, volume, and network mutations, plus terminal exec.
+  * **Viewer**: Read-only monitoring of containers, metrics, and logs.
+* API tokens strictly inherit the creator's role, preventing privilege escalation.
 
 ---
 

@@ -45,7 +45,7 @@
     ServerVersion: 'Docker Engine 27.0.3',
   });
 
-  const defaultVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.2.1';
+  const defaultVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.2.5';
   let appVersion = $state<string>(defaultVersion);
 
   async function loadTelemetry() {

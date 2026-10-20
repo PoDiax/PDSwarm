@@ -37,6 +37,12 @@ func testConfigDefaults(t *testing.T) {
 	if cfg.JWTSecret != "" {
 		t.Errorf("expected empty jwt secret, got %s", cfg.JWTSecret)
 	}
+	if len(cfg.TrustedProxies) == 0 {
+		t.Errorf("expected default trusted proxies, got empty")
+	}
+	if len(cfg.AllowedOrigins) != 0 {
+		t.Errorf("expected empty allowed origins by default, got %v", cfg.AllowedOrigins)
+	}
 }
 
 func testConfigEnvVars(t *testing.T) {
@@ -52,6 +58,7 @@ func testConfigEnvVars(t *testing.T) {
 	os.Setenv("PDSWARM_DATA_DIR", "/var/lib/pdswarm")
 	os.Setenv("PDSWARM_NO_AUTH", "true")
 	os.Setenv("PDSWARM_JWT_SECRET", "supersecret")
+	os.Setenv("PDSWARM_ALLOWED_ORIGINS", "https://example.com, https://test.local")
 	defer func() {
 		os.Unsetenv("PDSWARM_HOST")
 		os.Unsetenv("PDSWARM_PORT")
@@ -59,6 +66,7 @@ func testConfigEnvVars(t *testing.T) {
 		os.Unsetenv("PDSWARM_DATA_DIR")
 		os.Unsetenv("PDSWARM_NO_AUTH")
 		os.Unsetenv("PDSWARM_JWT_SECRET")
+		os.Unsetenv("PDSWARM_ALLOWED_ORIGINS")
 	}()
 
 	cfg, err := config.Load()
@@ -82,6 +90,9 @@ func testConfigEnvVars(t *testing.T) {
 	}
 	if cfg.JWTSecret != "supersecret" {
 		t.Errorf("expected jwt secret supersecret, got %s", cfg.JWTSecret)
+	}
+	if len(cfg.AllowedOrigins) != 2 || cfg.AllowedOrigins[0] != "https://example.com" || cfg.AllowedOrigins[1] != "https://test.local" {
+		t.Errorf("unexpected allowed origins: %v", cfg.AllowedOrigins)
 	}
 }
 

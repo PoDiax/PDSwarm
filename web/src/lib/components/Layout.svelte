@@ -22,7 +22,7 @@
     user = { username: 'admin', role: 'admin' },
     hostStatus = 'connected',
     hostVersion = 'Docker Ready',
-    appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.2.1',
+    appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.2.5',
     onNavigate,
     onLogout,
   }: Props = $props();

@@ -171,7 +171,7 @@ func (m *Manager) Delete(id string) error {
 		return ErrTaskNotFound
 	}
 
-	if task.Status == StatusRunning {
+	if task.GetStatus() == StatusRunning {
 		return errors.New("cannot delete an active running task")
 	}
 

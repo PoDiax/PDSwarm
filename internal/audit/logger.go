@@ -205,35 +205,13 @@ func (l *Logger) LogTokenAction(ip, username, action, tokenName string) {
 	l.writeLine("AUTH", "INFO", msg)
 }
 
-// ClientIP extracts the real remote IP address of the client,
-// properly resolving headers when behind reverse proxies (Nginx, Traefik, Caddy, Cloudflare).
+// ClientIP extracts the remote IP address of the client from r.RemoteAddr.
+// When behind reverse proxies, r.RemoteAddr should be pre-sanitized by trusted proxy middleware.
 func ClientIP(r *http.Request) string {
 	if r == nil {
 		return "unknown"
 	}
 
-	// 1. Cloudflare connecting IP
-	if cf := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); cf != "" {
-		return cf
-	}
-
-	// 2. X-Forwarded-For (take the first client IP in comma-separated chain)
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		if len(parts) > 0 {
-			ip := strings.TrimSpace(parts[0])
-			if ip != "" {
-				return ip
-			}
-		}
-	}
-
-	// 3. X-Real-IP
-	if xrip := strings.TrimSpace(r.Header.Get("X-Real-IP")); xrip != "" {
-		return xrip
-	}
-
-	// 4. RemoteAddr
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil && host != "" {
 		return host

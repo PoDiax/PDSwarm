@@ -208,6 +208,16 @@ func (m *mockValidator) ValidateToken(rawToken string) (*store.APIToken, error) 
 	return nil, store.ErrNotFound
 }
 
+func (m *mockValidator) GetUser(username string) (*store.User, error) {
+	if m.tok != nil && username == m.tok.CreatedBy {
+		return &store.User{
+			Username: username,
+			Role:     "admin",
+		}, nil
+	}
+	return nil, store.ErrNotFound
+}
+
 func TestAuthMiddleware_APIToken(t *testing.T) {
 	validator := &mockValidator{
 		token: "pds_1234567890abcdef1234567890abcdef",

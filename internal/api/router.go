@@ -14,6 +14,7 @@ import (
 	"github.com/podiax/pdswarm/internal/docker"
 	"github.com/podiax/pdswarm/internal/store"
 	"github.com/podiax/pdswarm/internal/templates"
+	"golang.org/x/time/rate"
 )
 
 type contextKey string
@@ -121,15 +122,23 @@ func SetupRouter(cfg *config.Config, st store.Store, ds *docker.Service, staticF
 func SetupRouterWithRegistry(cfg *config.Config, st store.Store, ds *docker.Service, reg *docker.DockerServiceRegistry, staticFS ...fs.FS) http.Handler {
 	r := chi.NewRouter()
 
+	var trustedProxies []string
+	var allowedOrigins []string
+	if cfg != nil {
+		trustedProxies = cfg.TrustedProxies
+		allowedOrigins = cfg.AllowedOrigins
+	}
+
 	// Base middlewares
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	r.Use(TrustedProxyMiddleware(trustedProxies))
+	r.Use(RateLimitMiddleware(NewIPRateLimiter(rate.Limit(100), 200))) // Global rate limit: 100 req/s, burst 200
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	// CORS middleware
+	// Strict CORS middleware - allows specified origins or same-origin only when empty
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"https://*", "http://*"},
+		AllowedOrigins:   allowedOrigins, // Empty means same-origin only for browser security
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Environment-ID"},
 		ExposedHeaders:   []string{"Link"},
@@ -147,33 +156,135 @@ func SetupRouterWithRegistry(cfg *config.Config, st store.Store, ds *docker.Serv
 		jwtSecret = "pdswarm-default-jwt-secret-key"
 	}
 
+	authLimiter := NewIPRateLimiter(rate.Limit(5), 10) // Auth-specific rate limit: 5 req/s, burst 10
+
 	r.Route("/api", func(apiRouter chi.Router) {
 		// Environment resolution middleware
 		apiRouter.Use(EnvironmentMiddleware(st, reg, ds))
 
 		// Public auth endpoints
-		apiRouter.Get("/auth/status", HandleAuthStatus(cfg, st))
-		apiRouter.Post("/auth/setup", HandleAuthSetup(cfg, st))
-		apiRouter.Post("/auth/login", HandleAuthLogin(cfg, st))
-		apiRouter.Post("/auth/logout", HandleAuthLogout())
+		apiRouter.Group(func(authRouter chi.Router) {
+			authRouter.Use(RateLimitMiddleware(authLimiter))
+			authRouter.Get("/auth/status", HandleAuthStatus(cfg, st))
+			authRouter.Post("/auth/setup", HandleAuthSetup(cfg, st))
+			authRouter.Post("/auth/login", HandleAuthLogin(cfg, st))
+			authRouter.Post("/auth/logout", HandleAuthLogout())
+		})
 
 		// Public health check and version
 		apiRouter.Get("/system/ping", HandleSystemPing(ds))
 		apiRouter.Get("/system/version", HandleSystemVersion())
 		apiRouter.Get("/version", HandleSystemVersion())
 
+		// Initialize catalog manager for templates
+		catalogManager := templates.NewCatalogManager()
+		if st != nil {
+			_ = catalogManager.Rebuild(context.Background(), nil, st)
+		}
+
 		// Protected endpoints
 		apiRouter.Group(func(protected chi.Router) {
 			protected.Use(auth.AuthMiddleware(jwtSecret, noAuth, st))
 
-			// Auth identity & user administration
+			// --- ADMIN ONLY ROUTES ---
+			protected.Group(func(admin chi.Router) {
+				admin.Use(RequireRole("admin"))
+
+				// Users
+				admin.Get("/users", HandleListUsers(st))
+				admin.Post("/users", HandleCreateUser(st))
+				admin.Delete("/users/{username}", HandleDeleteUser(st))
+
+				// Environments
+				admin.Post("/environments", HandleCreateEnvironment(st, reg))
+				admin.Post("/environments/test", HandleTestEnvironment())
+				admin.Put("/environments/{id}", HandleUpdateEnvironment(st, reg))
+				admin.Delete("/environments/{id}", HandleDeleteEnvironment(st, reg))
+
+				// System info, Host paths & Daemon Logging
+				admin.Get("/system/host-paths", HandleSuggestHostPaths(ds))
+				admin.Get("/system/logging", HandleGetLoggingConfig(ds, st))
+				admin.Put("/system/logging", HandleUpdateLoggingConfig(ds, st))
+				admin.Get("/system/update", HandleGetUpdateStatus(st, ds))
+				admin.Post("/system/update/check", HandleCheckUpdate(st))
+				admin.Put("/system/update/auto", HandleSetAutoUpdate(st, ds))
+				admin.Post("/system/update/apply", HandleApplyUpdate(st, ds))
+				admin.Get("/system/audit-logs", HandleGetAuditLogs(cfg))
+
+				// Registries
+				admin.Post("/registries", HandleCreateRegistry(st))
+				admin.Put("/registries/{id}", HandleUpdateRegistry(st))
+				admin.Delete("/registries/{id}", HandleDeleteRegistry(st))
+				admin.Post("/registries/{id}/ping", HandlePingRegistry(st, ds))
+
+				// Template Repositories & Settings
+				admin.Get("/templates/settings", HandleGetTemplateSettings(st))
+				admin.Put("/templates/settings", HandleUpdateTemplateSettings(catalogManager, st))
+				admin.Get("/templates/repos", HandleListTemplateRepos(st))
+				admin.Post("/templates/repos", HandleCreateTemplateRepo(catalogManager, st))
+				admin.Put("/templates/repos/{id}", HandleUpdateTemplateRepo(catalogManager, st))
+				admin.Delete("/templates/repos/{id}", HandleDeleteTemplateRepo(catalogManager, st))
+				admin.Post("/templates/repos/{id}/sync", HandleSyncTemplateRepo(catalogManager, st))
+				admin.Post("/templates/repos/sync", HandleSyncAllTemplateRepos(catalogManager, st))
+			})
+
+			// --- OPERATOR & ADMIN ROUTES ---
+			protected.Group(func(op chi.Router) {
+				op.Use(RequireRole("admin", "operator"))
+
+				// Containers
+				op.Post("/containers", HandleCreateContainer(ds, st))
+				op.Post("/containers/prune", HandlePruneContainers(ds))
+				op.Post("/containers/{id}/start", HandleStartContainer(ds))
+				op.Post("/containers/{id}/stop", HandleStopContainer(ds))
+				op.Post("/containers/{id}/restart", HandleRestartContainer(ds))
+				op.Post("/containers/{id}/pause", HandlePauseContainer(ds))
+				op.Post("/containers/{id}/unpause", HandleUnpauseContainer(ds))
+				op.Post("/containers/{id}/kill", HandleKillContainer(ds))
+				op.Post("/containers/{id}/update-image", HandleUpdateContainerImage(ds, st))
+				op.Post("/containers/{id}/recreate", HandleRecreateContainer(ds, st))
+				op.Delete("/containers/{id}", HandleDeleteContainer(ds))
+
+				// Container Files (Write)
+				op.Post("/containers/{id}/files/upload", HandleUploadContainerFile(ds))
+				op.Delete("/containers/{id}/files", HandleDeleteContainerFile(ds))
+
+				// Images (Mutations)
+				op.Post("/images/pull", HandlePullImage(st, ds))
+				op.Post("/images/build", HandleBuildImage(ds))
+				op.Post("/images/prune", HandlePruneImages(ds))
+				op.Delete("/images/{id}", HandleDeleteImage(ds))
+
+				// Volumes (Mutations)
+				op.Post("/volumes", HandleCreateVolume(ds))
+				op.Post("/volumes/prune", HandlePruneVolumes(ds))
+				op.Delete("/volumes/{name}", HandleDeleteVolume(ds))
+
+				// Networks (Mutations)
+				op.Post("/networks", HandleCreateNetwork(ds))
+				op.Post("/networks/prune", HandlePruneNetworks(ds))
+				op.Delete("/networks/{id}", HandleDeleteNetwork(ds))
+
+				// Stacks (Mutations)
+				op.Post("/stacks", HandleCreateStack(st, ds))
+				op.Put("/stacks/{name}", HandleUpdateStack(st, ds))
+				op.Post("/stacks/{name}/adopt", HandleAdoptStack(st, ds))
+				op.Post("/stacks/{name}/stop", HandleStopStack(st, ds))
+				op.Post("/stacks/{name}/down", HandleDownStack(st, ds))
+				op.Delete("/stacks/{name}", HandleDeleteStack(st, ds))
+
+				// Templates (Deploy)
+				op.Post("/templates/deploy", HandleDeployTemplate(catalogManager, st, ds))
+
+				// Terminal Exec (Write/Shell access)
+				op.Get("/ws/containers/{id}/exec", HandleContainerExecWS(ds))
+			})
+
+			// --- ALL AUTHENTICATED USERS (Viewer, Operator, Admin) ---
+			
+			// Identity & Access Tokens
 			protected.Get("/auth/me", HandleAuthMe(cfg))
 			protected.Put("/auth/password", HandleChangePassword(st))
-			protected.Get("/users", HandleListUsers(st))
-			protected.Post("/users", HandleCreateUser(st))
-			protected.Delete("/users/{username}", HandleDeleteUser(st))
-
-			// API Access Tokens
 			protected.Get("/tokens", HandleListTokens(st))
 			protected.Post("/tokens", HandleCreateToken(st))
 			protected.Delete("/tokens/{id}", HandleDeleteToken(st))
@@ -184,112 +295,53 @@ func SetupRouterWithRegistry(cfg *config.Config, st store.Store, ds *docker.Serv
 			protected.Post("/tasks/{id}/cancel", HandleCancelTask(nil))
 			protected.Delete("/tasks/{id}", HandleDeleteTask(nil))
 
-			// Environments
+			// Environments (Read-only for Viewers)
 			protected.Get("/environments", HandleListEnvironments(st, reg))
-			protected.Post("/environments", HandleCreateEnvironment(st, reg))
-			protected.Post("/environments/test", HandleTestEnvironment())
 			protected.Get("/environments/{id}", HandleGetEnvironment(st, reg))
-			protected.Put("/environments/{id}", HandleUpdateEnvironment(st, reg))
-			protected.Delete("/environments/{id}", HandleDeleteEnvironment(st, reg))
 			protected.Post("/environments/{id}/ping", HandlePingEnvironment(st, reg))
 
-			// System info, Port conflict monitoring, Host filesystem path suggestions & Daemon Logging
+			// System Ports
 			protected.Get("/system/info", HandleSystemInfo(ds))
 			protected.Get("/system/ports", HandleGetAllocatedPorts(ds))
 			protected.Post("/system/ports/check", HandleCheckPortConflicts(ds))
-			protected.Get("/system/host-paths", HandleSuggestHostPaths(ds))
-			protected.Get("/system/logging", HandleGetLoggingConfig(ds, st))
-			protected.Put("/system/logging", HandleUpdateLoggingConfig(ds, st))
-			protected.Get("/system/update", HandleGetUpdateStatus(st, ds))
-			protected.Post("/system/update/check", HandleCheckUpdate(st))
-			protected.Put("/system/update/auto", HandleSetAutoUpdate(st, ds))
-			protected.Post("/system/update/apply", HandleApplyUpdate(st, ds))
-			protected.Get("/system/audit-logs", HandleGetAuditLogs(cfg))
 
-			// Containers
+			// Containers (Read-only)
 			protected.Get("/containers", HandleListContainers(ds))
-			protected.Post("/containers", HandleCreateContainer(ds, st))
-			protected.Post("/containers/prune", HandlePruneContainers(ds))
 			protected.Get("/containers/{id}", HandleInspectContainer(ds))
-			protected.Post("/containers/{id}/start", HandleStartContainer(ds))
-			protected.Post("/containers/{id}/stop", HandleStopContainer(ds))
-			protected.Post("/containers/{id}/restart", HandleRestartContainer(ds))
-			protected.Post("/containers/{id}/pause", HandlePauseContainer(ds))
-			protected.Post("/containers/{id}/unpause", HandleUnpauseContainer(ds))
-			protected.Post("/containers/{id}/kill", HandleKillContainer(ds))
-			protected.Post("/containers/{id}/update-image", HandleUpdateContainerImage(ds, st))
-			protected.Post("/containers/{id}/recreate", HandleRecreateContainer(ds, st))
-			protected.Delete("/containers/{id}", HandleDeleteContainer(ds))
 
-			// Container Files
+			// Container Files (Read-only)
 			protected.Get("/containers/{id}/files/stat", HandleStatContainerFile(ds))
 			protected.Get("/containers/{id}/files/list", HandleListContainerFiles(ds))
 			protected.Get("/containers/{id}/files/read", HandleReadContainerFile(ds))
 			protected.Get("/containers/{id}/files/download", HandleDownloadContainerFile(ds))
-			protected.Post("/containers/{id}/files/upload", HandleUploadContainerFile(ds))
-			protected.Delete("/containers/{id}/files", HandleDeleteContainerFile(ds))
 
-			// Registries
+			// Registries (Read-only)
 			protected.Get("/registries", HandleListRegistries(st))
-			protected.Post("/registries", HandleCreateRegistry(st))
 			protected.Get("/registries/{id}", HandleGetRegistry(st))
-			protected.Put("/registries/{id}", HandleUpdateRegistry(st))
-			protected.Delete("/registries/{id}", HandleDeleteRegistry(st))
-			protected.Post("/registries/{id}/ping", HandlePingRegistry(st, ds))
 			protected.Post("/registries/test", HandleTestRegistry(st, ds))
 
-			// Images
+			// Images (Read-only)
 			protected.Get("/images", HandleListImages(ds))
-			protected.Post("/images/pull", HandlePullImage(st, ds))
 			protected.Post("/images/check-update", HandleCheckImageUpdate(st, ds))
 			protected.Post("/images/check-updates", HandleCheckImageUpdatesBatch(st, ds))
 			protected.Get("/images/{id}/check-update", HandleCheckImageUpdate(st, ds))
-			protected.Post("/images/build", HandleBuildImage(ds))
-			protected.Post("/images/prune", HandlePruneImages(ds))
-			protected.Delete("/images/{id}", HandleDeleteImage(ds))
 
-			// Volumes
+			// Volumes (Read-only)
 			protected.Get("/volumes", HandleListVolumes(ds))
-			protected.Post("/volumes", HandleCreateVolume(ds))
-			protected.Post("/volumes/prune", HandlePruneVolumes(ds))
-			protected.Delete("/volumes/{name}", HandleDeleteVolume(ds))
 
-			// Networks
+			// Networks (Read-only)
 			protected.Get("/networks", HandleListNetworks(ds))
-			protected.Post("/networks", HandleCreateNetwork(ds))
-			protected.Post("/networks/prune", HandlePruneNetworks(ds))
-			protected.Delete("/networks/{id}", HandleDeleteNetwork(ds))
 
-			// Stacks
+			// Stacks (Read-only)
 			protected.Get("/stacks", HandleListStacks(st, ds))
-			protected.Post("/stacks", HandleCreateStack(st, ds))
 			protected.Get("/stacks/{name}", HandleGetStack(st, ds))
-			protected.Put("/stacks/{name}", HandleUpdateStack(st, ds))
-			protected.Post("/stacks/{name}/adopt", HandleAdoptStack(st, ds))
-			protected.Post("/stacks/{name}/stop", HandleStopStack(st, ds))
-			protected.Post("/stacks/{name}/down", HandleDownStack(st, ds))
-			protected.Delete("/stacks/{name}", HandleDeleteStack(st, ds))
 
-			// Templates (1-Click App Store)
-			catalogManager := templates.NewCatalogManager()
-			if st != nil {
-				_ = catalogManager.Rebuild(context.Background(), nil, st)
-			}
+			// Templates (Read-only)
 			protected.Get("/templates", HandleListTemplates(catalogManager))
 			protected.Get("/templates/categories", HandleListTemplateCategories(catalogManager))
-			protected.Get("/templates/settings", HandleGetTemplateSettings(st))
-			protected.Put("/templates/settings", HandleUpdateTemplateSettings(catalogManager, st))
-			protected.Get("/templates/repos", HandleListTemplateRepos(st))
-			protected.Post("/templates/repos", HandleCreateTemplateRepo(catalogManager, st))
-			protected.Put("/templates/repos/{id}", HandleUpdateTemplateRepo(catalogManager, st))
-			protected.Delete("/templates/repos/{id}", HandleDeleteTemplateRepo(catalogManager, st))
-			protected.Post("/templates/repos/{id}/sync", HandleSyncTemplateRepo(catalogManager, st))
-			protected.Post("/templates/repos/sync", HandleSyncAllTemplateRepos(catalogManager, st))
 			protected.Get("/templates/{id}", HandleGetTemplate(catalogManager))
-			protected.Post("/templates/deploy", HandleDeployTemplate(catalogManager, st, ds))
 
-			// WebSockets
-			protected.Get("/ws/containers/{id}/exec", HandleContainerExecWS(ds))
+			// WebSockets (Read-only)
 			protected.Get("/ws/containers/{id}/logs", HandleContainerLogsWS(ds))
 			protected.Get("/ws/containers/{id}/stats", HandleContainerStatsWS(ds))
 		})

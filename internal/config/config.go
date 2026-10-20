@@ -5,23 +5,30 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
-var Version = "0.2.1"
+var Version = "0.2.5"
 
 type Config struct {
-	Host        string
-	Port        int
-	SocketPath  string
-	DataDir     string
-	NoAuth      bool
-	JWTSecret   string
-	ShowVersion bool
-	AuthLogPath string
-	LogLevel    string
+	Host           string
+	Port           int
+	SocketPath     string
+	DataDir        string
+	NoAuth         bool
+	JWTSecret      string
+	ShowVersion    bool
+	AuthLogPath    string
+	LogLevel       string
+	TrustedProxies []string
+	AllowedOrigins []string
 }
 
 func Load() (*Config, error) {
+	defaultProxies := "127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1/128"
+	trustedProxiesRaw := getEnv("PDSWARM_TRUSTED_PROXIES", defaultProxies)
+	allowedOriginsRaw := getEnv("PDSWARM_ALLOWED_ORIGINS", "")
+
 	cfg := &Config{
 		Host:        getEnv("PDSWARM_HOST", "0.0.0.0"),
 		Port:        getEnvInt("PDSWARM_PORT", 9000),
@@ -41,6 +48,8 @@ func Load() (*Config, error) {
 	flag.StringVar(&cfg.JWTSecret, "jwt-secret", cfg.JWTSecret, "JWT signing secret (generated if empty)")
 	flag.StringVar(&cfg.AuthLogPath, "auth-log", cfg.AuthLogPath, "Path to security/auth audit log file for fail2ban / jails")
 	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "Audit log level: auth, failures_only, all, or off")
+	flag.StringVar(&trustedProxiesRaw, "trusted-proxies", trustedProxiesRaw, "Comma-separated list of trusted proxy CIDRs/IPs")
+	flag.StringVar(&allowedOriginsRaw, "allowed-origins", allowedOriginsRaw, "Comma-separated list of allowed CORS/WebSocket origins (empty = same-origin only)")
 	flag.BoolVar(&cfg.ShowVersion, "version", false, "Print version and exit")
 	flag.BoolVar(&cfg.ShowVersion, "v", false, "Print version and exit (shorthand)")
 
@@ -50,6 +59,20 @@ func Load() (*Config, error) {
 
 	if cfg.AuthLogPath == "" {
 		cfg.AuthLogPath = filepath.Join(cfg.DataDir, "auth.log")
+	}
+
+	for _, p := range strings.Split(trustedProxiesRaw, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			cfg.TrustedProxies = append(cfg.TrustedProxies, p)
+		}
+	}
+
+	for _, o := range strings.Split(allowedOriginsRaw, ",") {
+		o = strings.TrimSpace(o)
+		if o != "" {
+			cfg.AllowedOrigins = append(cfg.AllowedOrigins, o)
+		}
 	}
 
 	return cfg, nil

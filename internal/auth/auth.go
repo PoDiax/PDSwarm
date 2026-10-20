@@ -17,9 +17,10 @@ type contextKey string
 
 const UserContextKey = contextKey("user")
 
-// TokenValidator defines the contract for validating API tokens.
+// TokenValidator defines the contract for validating API tokens and looking up users.
 type TokenValidator interface {
 	ValidateToken(rawToken string) (*store.APIToken, error)
+	GetUser(username string) (*store.User, error)
 }
 
 type Claims struct {
@@ -114,15 +115,23 @@ func AuthMiddleware(secret string, noAuth bool, tokenValidator ...TokenValidator
 					http.Error(w, `{"error":"invalid or expired token"}`, http.StatusUnauthorized)
 					return
 				}
+				userRole := "admin"
+				if validator != nil {
+					if u, err := validator.GetUser(tok.CreatedBy); err == nil {
+						userRole = u.Role
+					}
+				}
+				
 				claims := &Claims{
 					Username: tok.CreatedBy,
-					Role:     "admin",
+					Role:     userRole,
 				}
 				ctx := context.WithValue(r.Context(), UserContextKey, claims)
 				ctx = context.WithValue(ctx, contextKey("store_user"), &store.User{
 					Username: tok.CreatedBy,
-					Role:     "admin",
+					Role:     userRole,
 				})
+				
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}

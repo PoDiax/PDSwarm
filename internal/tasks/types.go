@@ -75,6 +75,13 @@ func (t *Task) Snapshot() Task {
 	}
 }
 
+// GetStatus returns the current task status thread-safely.
+func (t *Task) GetStatus() TaskStatus {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.Status
+}
+
 // SetProgress updates the progress percentage and current stage description.
 func (t *Task) SetProgress(pct int, stage string) {
 	t.mu.Lock()
