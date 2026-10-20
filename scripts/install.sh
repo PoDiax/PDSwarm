@@ -327,7 +327,7 @@ LimitNOFILE=65535
 # Process hardening
 ProtectSystem=full
 ProtectHome=true
-ReadWritePaths=${DATA_DIR} ${LOG_DIR}
+ReadWritePaths=${DATA_DIR} ${LOG_DIR} /usr/local/bin
 
 [Install]
 WantedBy=multi-user.target
@@ -345,6 +345,14 @@ set -euo pipefail
 REPO="podiax/pdswarm"
 BIN_PATH="/usr/local/bin/pdswarm"
 SERVICE_NAME="pdswarm.service"
+FORCE_UPDATE="false"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -f|--force) FORCE_UPDATE="true"; shift ;;
+    *) shift ;;
+  esac
+done
 
 ARCH="$(uname -m)"
 case "${ARCH}" in
@@ -366,7 +374,7 @@ if [[ -z "${RELEASE_JSON}" ]]; then
 fi
 
 LATEST_TAG="$(echo "${RELEASE_JSON}" | grep -o '"tag_name": *"[^"]*"' | head -n1 | cut -d'"' -f4 || true)"
-if [[ -z "${LATEST_TAG}" || "${CURRENT_VERSION}" == "${LATEST_TAG}" ]]; then
+if [[ "${FORCE_UPDATE}" != "true" && ( -z "${LATEST_TAG}" || "${CURRENT_VERSION}" == "${LATEST_TAG}" ) ]]; then
   exit 0
 fi
 
@@ -375,7 +383,7 @@ if [[ -z "${DOWNLOAD_URL}" ]]; then
   DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/pdswarm-linux-${TARGET_ARCH}"
 fi
 
-TMP_BIN="${BIN_PATH}.tmp.$$"
+TMP_BIN="$(mktemp -p /tmp pdswarm.tmp.XXXXXX)"
 if curl -fsSL -H "User-Agent: PDSwarm-Updater" -o "${TMP_BIN}" "${DOWNLOAD_URL}"; then
   chmod +x "${TMP_BIN}"
   if "${TMP_BIN}" -version 2>&1 | grep -q "PDSwarm"; then

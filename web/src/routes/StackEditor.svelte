@@ -17,6 +17,12 @@
     ShieldAlert,
     TriangleAlert,
     RefreshCw,
+    FileCode,
+    FileKey,
+    Copy,
+    Trash,
+    Check,
+    Key,
   } from '@lucide/svelte';
   import YamlEditor from "../lib/components/YamlEditor.svelte";
   import { stackApi } from "../lib/api";
@@ -40,8 +46,30 @@
   // Form State
   let name = $state("");
   let composeYaml = $state("");
+  let stackEnv = $state("");
+  let activeEditorTab = $state<"compose" | "env">("compose");
   let isYamlValid = $state(true);
   let yamlError = $state<string | null>(null);
+
+  let parsedEnvMap = $derived.by<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    const lines = stackEnv.split("\n");
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#")) continue;
+      const clean = line.startsWith("export ") ? line.slice(7).trim() : line;
+      const idx = clean.indexOf("=");
+      if (idx !== -1) {
+        const k = clean.slice(0, idx).trim();
+        const v = clean.slice(idx + 1).trim();
+        if (k) map[k] = v;
+      }
+    }
+    return map;
+  });
+
+  let envVarCount = $derived(Object.keys(parsedEnvMap).length);
+  let envVarEntries = $derived(Object.entries(parsedEnvMap));
 
   $effect(() => {
     if (stackName) {
@@ -338,6 +366,7 @@
           loadedStack = stack;
           name = stack.name;
           composeYaml = stack.compose_yaml;
+          stackEnv = stack.env || "";
           isExternalStack = !!stack.is_external;
         }
       } catch (err: unknown) {
@@ -387,9 +416,9 @@
 
     try {
       if (isEditing) {
-        await stackApi.update(trimmedName, composeYaml, shouldDeploy);
+        await stackApi.update(trimmedName, composeYaml, shouldDeploy, stackEnv);
       } else {
-        await stackApi.create(trimmedName, composeYaml, shouldDeploy);
+        await stackApi.create(trimmedName, composeYaml, shouldDeploy, stackEnv);
       }
 
       successNotice = shouldDeploy
@@ -427,6 +456,11 @@
   function insertSnippet(snippet: string) {
     composeYaml =
       composeYaml + (composeYaml.endsWith("\n") ? "" : "\n") + snippet + "\n";
+  }
+
+  function insertEnvSnippet(snippet: string) {
+    stackEnv =
+      stackEnv + (stackEnv.endsWith("\n") || !stackEnv ? "" : "\n") + snippet + "\n";
   }
 </script>
 
@@ -681,6 +715,52 @@
   <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
     <!-- Main Code Editor Column -->
     <div class="lg:col-span-8 flex flex-col space-y-3">
+      <!-- File Switcher Tabs: Compose YAML vs .env -->
+      <div
+        class="flex flex-wrap items-center justify-between gap-2 p-1.5 rounded-xl bg-[#12131c] border border-white/[0.08]"
+      >
+        <div class="flex items-center gap-1.5">
+          <button
+            type="button"
+            onclick={() => (activeEditorTab = "compose")}
+            class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs transition cursor-pointer {activeEditorTab ===
+            'compose'
+              ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-semibold shadow-sm'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'}"
+          >
+            <FileCode class="w-3.5 h-3.5 text-cyan-400" />
+            <span>docker-compose.yml</span>
+          </button>
+
+          <button
+            type="button"
+            onclick={() => (activeEditorTab = "env")}
+            class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs transition cursor-pointer {activeEditorTab ===
+            'env'
+              ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold shadow-sm'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'}"
+          >
+            <FileKey class="w-3.5 h-3.5 text-amber-400" />
+            <span>.env (Environment Variables)</span>
+            {#if envVarCount > 0}
+              <span
+                class="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/25 text-amber-300 border border-amber-500/40 font-bold"
+              >
+                {envVarCount}
+              </span>
+            {/if}
+          </button>
+        </div>
+
+        <div class="text-[11px] font-mono text-slate-500 pr-2 hidden sm:block">
+          {#if activeEditorTab === "compose"}
+            <span>Variables like <code>${"{VAR:-default}"}</code> are interpolated from .env</span>
+          {:else}
+            <span>Define values for <code>${"{VAR}"}</code> references in compose</span>
+          {/if}
+        </div>
+      </div>
+
       {#if isLoadingStack}
         <div
           class="h-96 rounded-2xl bg-[#12131c] border border-white/[0.08] flex items-center justify-center text-slate-400 gap-3"
@@ -688,7 +768,7 @@
           <LoaderCircle class="w-6 h-6 animate-spin text-violet-400" />
           <span class="text-xs font-mono">Loading stack compose file...</span>
         </div>
-      {:else}
+      {:else if activeEditorTab === "compose"}
         <YamlEditor
           bind:value={composeYaml}
           minHeight="540px"
@@ -697,6 +777,63 @@
             yamlError = err;
           }}
         />
+      {:else}
+        <!-- .env Editor Card -->
+        <div
+          class="flex flex-col rounded-2xl bg-[#0e1017] border border-white/[0.08] shadow-2xl overflow-hidden"
+        >
+          <div
+            class="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-[#090a10] border-b border-white/[0.08] text-xs select-none"
+          >
+            <div class="flex items-center gap-3">
+              <div class="flex items-center gap-1.5 text-slate-300 font-medium">
+                <FileKey class="w-4 h-4 text-amber-400" />
+                <span class="font-mono text-amber-300 font-semibold tracking-wide"
+                  >Stack Environment (.env)</span
+                >
+              </div>
+              <span class="w-1 h-3 rounded-full bg-white/10"></span>
+              <div
+                class="flex items-center gap-2 font-mono text-[11px] text-slate-400"
+              >
+                <span>{envVarCount} {envVarCount === 1 ? "variable" : "variables"} defined</span>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                onclick={() => {
+                  navigator.clipboard.writeText(stackEnv);
+                }}
+                class="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 hover:text-white border border-white/[0.06] transition text-[11px] cursor-pointer"
+              >
+                <Copy class="w-3 h-3" />
+                <span>Copy .env</span>
+              </button>
+              <button
+                type="button"
+                onclick={() => {
+                  stackEnv = "";
+                }}
+                class="p-1 rounded-lg bg-white/[0.04] hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-white/[0.06] transition cursor-pointer"
+                title="Clear environment variables"
+              >
+                <Trash class="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <div class="relative flex flex-1 p-3 bg-[#0e1017]">
+            <textarea
+              bind:value={stackEnv}
+              placeholder="# Define stack environment variables (.env) here&#10;# Syntax: KEY=VALUE&#10;# Example:&#10;PUID=1000&#10;PGID=1000&#10;DB_PASSWORD=secretpassword&#10;DB_HOSTNAME=database&#10;UPLOAD_LOCATION=/var/lib/immich&#10;IMMICH_VERSION=release"
+              class="w-full font-mono text-xs text-amber-100 bg-transparent resize-y outline-none border-none p-3 leading-relaxed selection:bg-amber-500/30 placeholder:text-slate-600 focus:ring-0"
+              style="min-height: 480px;"
+              spellcheck="false"
+            ></textarea>
+          </div>
+        </div>
       {/if}
 
       <!-- Keyboard Shortcuts & Hints -->
@@ -723,131 +860,222 @@
             > Deploy</span
           >
         </div>
-        <span class="text-slate-500 font-mono">PDSwarm v1.0 Compose Studio</span
-        >
+        <span class="text-slate-500 font-mono">PDSwarm Compose Studio</span>
       </div>
     </div>
 
     <!-- Right Side: Real-time Service Inspector & Blueprint Helpers -->
     <div class="lg:col-span-4 space-y-4">
-      <!-- Live Service Inspector Card -->
-      <div
-        class="p-4 rounded-2xl bg-[#12131c] border border-white/[0.08] shadow-lg space-y-3"
-      >
+      {#if activeEditorTab === "compose"}
+        <!-- Live Service Inspector Card -->
         <div
-          class="flex items-center justify-between border-b border-white/[0.08] pb-2.5"
+          class="p-4 rounded-2xl bg-[#12131c] border border-white/[0.08] shadow-lg space-y-3"
         >
-          <div class="flex items-center gap-2">
-            <Box class="w-4 h-4 text-cyan-400" />
-            <span class="text-xs font-bold text-white tracking-wide"
-              >Live Services Inspector</span
-            >
-          </div>
-          <span
-            class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-violet-500/20 text-violet-300 border border-violet-500/30"
+          <div
+            class="flex items-center justify-between border-b border-white/[0.08] pb-2.5"
           >
-            {parsedServices.length}
-            {parsedServices.length === 1 ? "service" : "services"}
-          </span>
-        </div>
-
-        {#if parsedServices.length === 0}
-          <div class="py-6 text-center text-slate-500 text-xs">
-            <Code class="w-8 h-8 mx-auto text-slate-600 mb-2" />
-            <p>No services detected in compose file.</p>
-            <p class="text-[11px] text-slate-600 mt-0.5">
-              Define a <code class="text-violet-400">services:</code> block to view
-              inspector.
-            </p>
-          </div>
-        {:else}
-          <div class="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
-            {#each parsedServices as svc}
-              <div
-                class="p-3 rounded-xl bg-[#090a10] border border-white/[0.06] space-y-2"
+            <div class="flex items-center gap-2">
+              <Box class="w-4 h-4 text-cyan-400" />
+              <span class="text-xs font-bold text-white tracking-wide"
+                >Live Services Inspector</span
               >
-                <div class="flex items-center justify-between">
-                  <span class="font-mono text-xs font-bold text-cyan-300"
-                    >{svc.name}</span
-                  >
-                  {#if svc.restart}
-                    <span
-                      class="text-[10px] font-mono text-slate-400 bg-white/[0.04] px-1.5 py-0.5 rounded"
+            </div>
+            <span
+              class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-violet-500/20 text-violet-300 border border-violet-500/30"
+            >
+              {parsedServices.length}
+              {parsedServices.length === 1 ? "service" : "services"}
+            </span>
+          </div>
+
+          {#if parsedServices.length === 0}
+            <div class="py-6 text-center text-slate-500 text-xs">
+              <Code class="w-8 h-8 mx-auto text-slate-600 mb-2" />
+              <p>No services detected in compose file.</p>
+              <p class="text-[11px] text-slate-600 mt-0.5">
+                Define a <code class="text-violet-400">services:</code> block to view
+                inspector.
+              </p>
+            </div>
+          {:else}
+            <div class="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+              {#each parsedServices as svc}
+                <div
+                  class="p-3 rounded-xl bg-[#090a10] border border-white/[0.06] space-y-2"
+                >
+                  <div class="flex items-center justify-between">
+                    <span class="font-mono text-xs font-bold text-cyan-300"
+                      >{svc.name}</span
                     >
-                      {svc.restart}
-                    </span>
+                    {#if svc.restart}
+                      <span
+                        class="text-[10px] font-mono text-slate-400 bg-white/[0.04] px-1.5 py-0.5 rounded"
+                      >
+                        {svc.restart}
+                      </span>
+                    {/if}
+                  </div>
+
+                  <div
+                    class="text-[11px] font-mono text-slate-400 truncate flex items-center gap-1.5"
+                  >
+                    <span class="text-slate-500">Image:</span>
+                    <span class="text-white truncate">{svc.image}</span>
+                  </div>
+
+                  {#if svc.ports.length > 0}
+                    <div class="flex flex-wrap gap-1.5 pt-1">
+                      {#each svc.ports as port}
+                        <span
+                          class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/20"
+                        >
+                          {port}
+                        </span>
+                      {/each}
+                    </div>
                   {/if}
                 </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
 
-                <div
-                  class="text-[11px] font-mono text-slate-400 truncate flex items-center gap-1.5"
-                >
-                  <span class="text-slate-500">Image:</span>
-                  <span class="text-white truncate">{svc.image}</span>
-                </div>
-
-                {#if svc.ports.length > 0}
-                  <div class="flex flex-wrap gap-1.5 pt-1">
-                    {#each svc.ports as port}
-                      <span
-                        class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/20"
-                      >
-                        {port}
-                      </span>
-                    {/each}
-                  </div>
-                {/if}
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </div>
-
-      <!-- Quick Snippets Insertion Card -->
-      <div
-        class="p-4 rounded-2xl bg-[#12131c] border border-white/[0.08] shadow-lg space-y-3"
-      >
+        <!-- Quick Snippets Insertion Card -->
         <div
-          class="flex items-center justify-between border-b border-white/[0.08] pb-2.5"
+          class="p-4 rounded-2xl bg-[#12131c] border border-white/[0.08] shadow-lg space-y-3"
         >
-          <div class="flex items-center gap-2">
-            <Code class="w-4 h-4 text-violet-400" />
-            <span class="text-xs font-bold text-white tracking-wide"
-              >Quick Snippets</span
-            >
+          <div
+            class="flex items-center justify-between border-b border-white/[0.08] pb-2.5"
+          >
+            <div class="flex items-center gap-2">
+              <Code class="w-4 h-4 text-violet-400" />
+              <span class="text-xs font-bold text-white tracking-wide"
+                >Quick Snippets</span
+              >
+            </div>
+            <span class="text-[10px] text-slate-500">Click to append</span>
           </div>
-          <span class="text-[10px] text-slate-500">Click to append</span>
+
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <button
+              onclick={() => insertSnippet("    restart: unless-stopped")}
+              class="px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-left text-slate-300 hover:text-white transition font-mono text-[11px] truncate cursor-pointer"
+            >
+              + restart policy
+            </button>
+            <button
+              onclick={() => insertSnippet('    ports:\n      - "8080:80"')}
+              class="px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-left text-slate-300 hover:text-white transition font-mono text-[11px] truncate cursor-pointer"
+            >
+              + ports mapping
+            </button>
+            <button
+              onclick={() =>
+                insertSnippet("    environment:\n      - NODE_ENV=production")}
+              class="px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-left text-slate-300 hover:text-white transition font-mono text-[11px] truncate cursor-pointer"
+            >
+              + environment
+            </button>
+            <button
+              onclick={() =>
+                insertSnippet("    volumes:\n      - app-data:/data")}
+              class="px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-left text-slate-300 hover:text-white transition font-mono text-[11px] truncate cursor-pointer"
+            >
+              + volume bind
+            </button>
+          </div>
+        </div>
+      {:else}
+        <!-- Environment Variables Summary Card -->
+        <div
+          class="p-4 rounded-2xl bg-[#12131c] border border-white/[0.08] shadow-lg space-y-3"
+        >
+          <div
+            class="flex items-center justify-between border-b border-white/[0.08] pb-2.5"
+          >
+            <div class="flex items-center gap-2">
+              <Key class="w-4 h-4 text-amber-400" />
+              <span class="text-xs font-bold text-white tracking-wide"
+                >Active Stack Variables</span
+              >
+            </div>
+            <span
+              class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30"
+            >
+              {envVarCount} {envVarCount === 1 ? "var" : "vars"}
+            </span>
+          </div>
+
+          {#if envVarCount === 0}
+            <div class="py-6 text-center text-slate-500 text-xs">
+              <FileKey class="w-8 h-8 mx-auto text-slate-600 mb-2" />
+              <p>No variables defined yet.</p>
+              <p class="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                Add <code>KEY=VALUE</code> lines in the .env editor to supply values for Compose variables.
+              </p>
+            </div>
+          {:else}
+            <div class="space-y-1.5 max-h-[380px] overflow-y-auto pr-1">
+              {#each envVarEntries as [key, val]}
+                <div
+                  class="flex items-center justify-between gap-2 p-2 rounded-lg bg-[#090a10] border border-white/[0.06] text-xs font-mono"
+                >
+                  <span class="text-amber-300 font-semibold truncate">{key}</span>
+                  <span
+                    class="text-slate-400 truncate max-w-[140px] text-right text-[11px]"
+                    >{val || '""'}</span
+                  >
+                </div>
+              {/each}
+            </div>
+          {/if}
         </div>
 
-        <div class="grid grid-cols-2 gap-2 text-xs">
-          <button
-            onclick={() => insertSnippet("    restart: unless-stopped")}
-            class="px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-left text-slate-300 hover:text-white transition font-mono text-[11px] truncate"
+        <!-- Quick Env Snippets Card -->
+        <div
+          class="p-4 rounded-2xl bg-[#12131c] border border-white/[0.08] shadow-lg space-y-3"
+        >
+          <div
+            class="flex items-center justify-between border-b border-white/[0.08] pb-2.5"
           >
-            + restart policy
-          </button>
-          <button
-            onclick={() => insertSnippet('    ports:\n      - "8080:80"')}
-            class="px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-left text-slate-300 hover:text-white transition font-mono text-[11px] truncate"
-          >
-            + ports mapping
-          </button>
-          <button
-            onclick={() =>
-              insertSnippet("    environment:\n      - NODE_ENV=production")}
-            class="px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-left text-slate-300 hover:text-white transition font-mono text-[11px] truncate"
-          >
-            + environment
-          </button>
-          <button
-            onclick={() =>
-              insertSnippet("    volumes:\n      - app-data:/data")}
-            class="px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-left text-slate-300 hover:text-white transition font-mono text-[11px] truncate"
-          >
-            + volume bind
-          </button>
+            <div class="flex items-center gap-2">
+              <Sparkles class="w-4 h-4 text-amber-400" />
+              <span class="text-xs font-bold text-white tracking-wide"
+                >Common Env Presets</span
+              >
+            </div>
+            <span class="text-[10px] text-slate-500">Click to append</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <button
+              onclick={() => insertEnvSnippet("PUID=1000\nPGID=1000")}
+              class="px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-left text-slate-300 hover:text-white transition font-mono text-[11px] truncate cursor-pointer"
+            >
+              + PUID &amp; PGID
+            </button>
+            <button
+              onclick={() => insertEnvSnippet("TZ=UTC")}
+              class="px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-left text-slate-300 hover:text-white transition font-mono text-[11px] truncate cursor-pointer"
+            >
+              + Timezone (TZ)
+            </button>
+            <button
+              onclick={() => insertEnvSnippet("PORT=8080")}
+              class="px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-left text-slate-300 hover:text-white transition font-mono text-[11px] truncate cursor-pointer"
+            >
+              + PORT=8080
+            </button>
+            <button
+              onclick={() =>
+                insertEnvSnippet("DATABASE_URL=postgres://user:pass@db:5432/app")}
+              class="px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-left text-slate-300 hover:text-white transition font-mono text-[11px] truncate cursor-pointer"
+            >
+              + DATABASE_URL
+            </button>
+          </div>
         </div>
-      </div>
+      {/if}
     </div>
   </div>
 </div>

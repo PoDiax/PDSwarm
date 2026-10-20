@@ -101,6 +101,7 @@ export interface Network {
 export interface Stack {
   name: string;
   compose_yaml: string;
+  env?: string;
   status: string;
   is_external?: boolean;
   working_dir?: string;

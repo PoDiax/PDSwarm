@@ -19,11 +19,13 @@ import (
 type CreateStackRequest struct {
 	Name        string `json:"name"`
 	ComposeYAML string `json:"compose_yaml"`
+	Env         string `json:"env,omitempty"`
 	Deploy      *bool  `json:"deploy,omitempty"`
 }
 
 type UpdateStackRequest struct {
 	ComposeYAML string `json:"compose_yaml"`
+	Env         string `json:"env,omitempty"`
 	Deploy      *bool  `json:"deploy,omitempty"`
 }
 
@@ -206,6 +208,13 @@ func HandleGetStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 						_ = st.SaveStack(stack)
 					}
 				}
+				if stack.Env == "" && stack.WorkingDir != "" {
+					envFile := filepath.Join(stack.WorkingDir, ".env")
+					if envData, err := os.ReadFile(envFile); err == nil && len(envData) > 0 {
+						stack.Env = string(envData)
+						_ = st.SaveStack(stack)
+					}
+				}
 				resp := struct {
 					*store.Stack
 					Containers []docker.ContainerSummary `json:"containers"`
@@ -215,6 +224,14 @@ func HandleGetStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 				}
 				respondJSON(w, http.StatusOK, resp)
 				return
+			}
+		}
+
+		if stack.Env == "" && stack.WorkingDir != "" {
+			envFile := filepath.Join(stack.WorkingDir, ".env")
+			if envData, err := os.ReadFile(envFile); err == nil && len(envData) > 0 {
+				stack.Env = string(envData)
+				_ = st.SaveStack(stack)
 			}
 		}
 
@@ -244,7 +261,8 @@ func HandleCreateStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 			return
 		}
 
-		if _, err := docker.ParseComposeYAML(trimmedYAML); err != nil {
+		envMap := docker.ParseEnvFile(req.Env)
+		if _, err := docker.ParseComposeYAMLWithEnv(trimmedYAML, envMap); err != nil {
 			respondJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid compose yaml: %v", err))
 			return
 		}
@@ -259,6 +277,7 @@ func HandleCreateStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 		stack := &store.Stack{
 			Name:        req.Name,
 			ComposeYAML: trimmedYAML,
+			Env:         req.Env,
 			Status:      "created",
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
@@ -336,12 +355,14 @@ func HandleUpdateStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 			return
 		}
 
-		if _, err := docker.ParseComposeYAML(trimmedYAML); err != nil {
+		envMap := docker.ParseEnvFile(req.Env)
+		if _, err := docker.ParseComposeYAMLWithEnv(trimmedYAML, envMap); err != nil {
 			respondJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid compose yaml: %v", err))
 			return
 		}
 
 		stack.ComposeYAML = trimmedYAML
+		stack.Env = req.Env
 		stack.IsExternal = false // Elevated to fully managed PDSwarm stack
 		stack.UpdatedAt = time.Now()
 

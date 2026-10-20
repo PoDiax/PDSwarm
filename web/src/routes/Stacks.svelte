@@ -1448,6 +1448,37 @@
                     </button>
                   </div>
                 {/if}
+
+                {#if stack.env}
+                  <div class="mt-4 pt-4 border-t border-white/[0.06]">
+                    <div class="flex items-center justify-between mb-2">
+                      <div class="flex items-center gap-2">
+                        <span class="text-xs font-bold text-white tracking-wide"
+                          >Environment Variables (.env)</span
+                        >
+                        <span
+                          class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                        >
+                          Active
+                        </span>
+                      </div>
+                      <button
+                        onclick={() => {
+                          navigator.clipboard.writeText(stack.env || "");
+                        }}
+                        class="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] text-[11px] text-slate-300 hover:text-white transition cursor-pointer"
+                      >
+                        <Copy class="w-3.5 h-3.5" />
+                        <span>Copy .env</span>
+                      </button>
+                    </div>
+                    <div
+                      class="max-h-48 overflow-y-auto rounded-xl bg-[#090a10] border border-amber-500/20 p-3 text-xs font-mono text-amber-100 whitespace-pre selection:bg-amber-500/30"
+                    >
+                      {stack.env}
+                    </div>
+                  </div>
+                {/if}
               </div>
             </div>
           {/if}

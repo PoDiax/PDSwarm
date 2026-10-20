@@ -287,7 +287,7 @@ if [[ -z "${DOWNLOAD_URL}" ]]; then
   DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/pdswarm-linux-${TARGET_ARCH}"
 fi
 
-TMP_BIN="${BIN_PATH}.tmp.$$"
+TMP_BIN="$(mktemp -p /tmp pdswarm.tmp.XXXXXX)"
 if curl -fsSL -H "User-Agent: PDSwarm-Updater" -o "${TMP_BIN}" "${DOWNLOAD_URL}"; then
   chmod +x "${TMP_BIN}"
   if "${TMP_BIN}" -version 2>&1 | grep -q "PDSwarm"; then
@@ -494,21 +494,26 @@ func HandleApplyUpdate(st store.Store, ds *docker.Service) http.HandlerFunc {
 			return
 		}
 
-		// 2. Systemd service environment: Use pdswarm-update script or systemctl
+		// 2. Systemd service environment: Use pdswarm-update.service via systemctl
 		if installType == "systemd" {
-			updaterPath := "/usr/local/bin/pdswarm-update"
-			if _, err := os.Stat(updaterPath); err == nil {
-				cmd := exec.Command(updaterPath, "--force")
-				if err := cmd.Start(); err != nil {
-					respondJSONError(w, http.StatusInternalServerError, "failed to execute updater: "+err.Error())
-					return
+			_ = ensureSystemdUpdateUnits()
+
+			go func() {
+				time.Sleep(500 * time.Millisecond)
+				// Trigger the separate systemd update unit so it runs outside pdswarm.service's sandbox
+				cmd := exec.Command("systemctl", "start", "pdswarm-update.service")
+				if err := cmd.Run(); err != nil {
+					log.Printf("[WARN] Failed to start pdswarm-update.service: %v, falling back to systemd-run", err)
+					cmdRun := exec.Command("systemd-run", "--unit=pdswarm-manual-update", "--no-block", "/usr/local/bin/pdswarm-update")
+					_ = cmdRun.Run()
 				}
-				respondJSON(w, http.StatusOK, ApplyUpdateResponse{
-					Status:  "initiated",
-					Message: "Update initiated via pdswarm-update. The service will restart automatically once installation completes.",
-				})
-				return
-			}
+			}()
+
+			respondJSON(w, http.StatusOK, ApplyUpdateResponse{
+				Status:  "initiated",
+				Message: "Update initiated via systemd. The service will restart automatically once installation completes.",
+			})
+			return
 		}
 
 		// 3. Standalone environment: In-place binary replacement + detached process restart

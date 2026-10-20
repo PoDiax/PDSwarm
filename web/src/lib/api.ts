@@ -470,10 +470,10 @@ export const networkApi = {
 export const stackApi = {
   list: () => api.get<Stack[]>('/stacks'),
   get: (name: string) => api.get<Stack & { containers?: Container[] }>(`/stacks/${name}`),
-  create: (name: string, compose_yaml: string, deploy = true) =>
-    api.post<Stack>('/stacks', { name, compose_yaml, deploy }),
-  update: (name: string, compose_yaml: string, deploy = true) =>
-    api.put<Stack>(`/stacks/${name}`, { compose_yaml, deploy }),
+  create: (name: string, compose_yaml: string, deploy = true, env = '') =>
+    api.post<Stack>('/stacks', { name, compose_yaml, deploy, env }),
+  update: (name: string, compose_yaml: string, deploy = true, env = '') =>
+    api.put<Stack>(`/stacks/${name}`, { compose_yaml, deploy, env }),
   adopt: (name: string, data?: { compose_yaml?: string; working_dir?: string }) =>
     api.post<Stack>(`/stacks/${name}/adopt`, data || {}),
   stop: (name: string) => api.post<{ status: string }>(`/stacks/${name}/stop`),

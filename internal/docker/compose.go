@@ -75,11 +75,35 @@ type ComposeServiceConfig struct {
 	Command       CommandList     `yaml:"command,omitempty"`
 	Entrypoint    CommandList     `yaml:"entrypoint,omitempty"`
 	Environment   EnvironmentList `yaml:"environment,omitempty"`
+	EnvFile       StringOrList    `yaml:"env_file,omitempty"`
 	Ports         PortList        `yaml:"ports,omitempty"`
 	Volumes       VolumeList      `yaml:"volumes,omitempty"`
 	Restart       string          `yaml:"restart,omitempty"`
 	Networks      NetworkList     `yaml:"networks,omitempty"`
 	Labels        LabelMap        `yaml:"labels,omitempty"`
+}
+
+// StringOrList unmarshals a string or a sequence of strings from YAML.
+type StringOrList []string
+
+func (s *StringOrList) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		val := strings.TrimSpace(value.Value)
+		if val != "" {
+			*s = []string{val}
+		}
+		return nil
+	case yaml.SequenceNode:
+		var list []string
+		if err := value.Decode(&list); err != nil {
+			return err
+		}
+		*s = list
+		return nil
+	default:
+		return nil
+	}
 }
 
 // ComposeNetworkConfig represents a network definition in Docker Compose.
@@ -228,15 +252,25 @@ func (l *LabelMap) UnmarshalYAML(value *yaml.Node) error {
 	}
 }
 
-// ParseComposeYAML parses and validates a Compose YAML string.
+// ParseComposeYAML parses and validates a Compose YAML string after interpolating environment variables.
 func ParseComposeYAML(content string) (*ComposeConfig, error) {
+	return ParseComposeYAMLWithEnv(content, nil)
+}
+
+// ParseComposeYAMLWithEnv interpolates environment variables and parses a Compose YAML string.
+func ParseComposeYAMLWithEnv(content string, env map[string]string) (*ComposeConfig, error) {
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {
 		return nil, errors.New("compose YAML content cannot be empty")
 	}
 
+	interpolated, err := InterpolateCompose(trimmed, env)
+	if err != nil {
+		return nil, fmt.Errorf("variable interpolation error: %w", err)
+	}
+
 	var cfg ComposeConfig
-	if err := yaml.Unmarshal([]byte(trimmed), &cfg); err != nil {
+	if err := yaml.Unmarshal([]byte(interpolated), &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse yaml: %w", err)
 	}
 
@@ -297,11 +331,6 @@ func (s *Service) DeployStackWithProgress(ctx context.Context, stack *store.Stac
 		Status: fmt.Sprintf("Preparing deployment for stack %q...", stack.Name),
 	})
 
-	cfg, err := ParseComposeYAML(stack.ComposeYAML)
-	if err != nil {
-		return fmt.Errorf("invalid compose yaml: %w", err)
-	}
-
 	// Auto-infer working directory from config file or container labels if not explicitly provided
 	if stack.WorkingDir == "" && stack.ConfigFile != "" {
 		stack.WorkingDir = filepath.Dir(stack.ConfigFile)
@@ -322,6 +351,36 @@ func (s *Service) DeployStackWithProgress(ctx context.Context, stack *store.Stac
 				}
 			}
 		}
+	}
+
+	// Build combined environment map for variable interpolation:
+	// 1. Process environment (os.Environ)
+	// 2. .env file in WorkingDir (if present)
+	// 3. stack.Env from database (highest priority)
+	combinedEnv := make(map[string]string)
+	for _, envEntry := range os.Environ() {
+		parts := strings.SplitN(envEntry, "=", 2)
+		if len(parts) == 2 {
+			combinedEnv[parts[0]] = parts[1]
+		}
+	}
+	if stack.WorkingDir != "" {
+		envFilePath := filepath.Join(stack.WorkingDir, ".env")
+		if data, err := os.ReadFile(envFilePath); err == nil {
+			for k, v := range ParseEnvFile(string(data)) {
+				combinedEnv[k] = v
+			}
+		}
+	}
+	if stack.Env != "" {
+		for k, v := range ParseEnvFile(stack.Env) {
+			combinedEnv[k] = v
+		}
+	}
+
+	cfg, err := ParseComposeYAMLWithEnv(stack.ComposeYAML, combinedEnv)
+	if err != nil {
+		return fmt.Errorf("invalid compose yaml: %w", err)
 	}
 
 	// Determine and ensure project networks
@@ -565,11 +624,37 @@ func (s *Service) DeployStackWithProgress(ctx context.Context, stack *store.Stac
 			},
 		}
 
+		// Build container environment:
+		// 1. Load variables from env_file (e.g. .env)
+		var containerEnv []string
+		if len(svcCfg.EnvFile) > 0 {
+			for _, ef := range svcCfg.EnvFile {
+				ef = strings.TrimSpace(ef)
+				if ef == "" {
+					continue
+				}
+				if (ef == ".env" || ef == "./.env") && stack.Env != "" {
+					for k, v := range ParseEnvFile(stack.Env) {
+						containerEnv = append(containerEnv, fmt.Sprintf("%s=%s", k, v))
+					}
+				} else if stack.WorkingDir != "" {
+					efPath := filepath.Join(stack.WorkingDir, ef)
+					if data, err := os.ReadFile(efPath); err == nil {
+						for k, v := range ParseEnvFile(string(data)) {
+							containerEnv = append(containerEnv, fmt.Sprintf("%s=%s", k, v))
+						}
+					}
+				}
+			}
+		}
+		// 2. Explicit service environment takes priority
+		containerEnv = append(containerEnv, svcCfg.Environment...)
+
 		containerConfig := &container.Config{
 			Image:        svcCfg.Image,
 			Cmd:          strslice.StrSlice(svcCfg.Command),
 			Entrypoint:   strslice.StrSlice(svcCfg.Entrypoint),
-			Env:          svcCfg.Environment,
+			Env:          containerEnv,
 			Labels:       labels,
 			ExposedPorts: exposedPorts,
 			Volumes:      volumes,

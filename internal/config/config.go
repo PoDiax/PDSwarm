@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-var Version = "0.2.5"
+var Version = "0.2.6"
 
 type Config struct {
 	Host           string

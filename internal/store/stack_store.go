@@ -11,6 +11,7 @@ import (
 type Stack struct {
 	Name        string    `json:"name"`
 	ComposeYAML string    `json:"compose_yaml"`
+	Env         string    `json:"env,omitempty"`
 	Status      string    `json:"status"`
 	IsExternal  bool      `json:"is_external,omitempty"`
 	WorkingDir  string    `json:"working_dir,omitempty"`
