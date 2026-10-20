@@ -1085,6 +1085,22 @@ func (s *Service) RecoverEnvFromPortainer(ctx context.Context, workingDir string
 // ExtractOrSynthesizeStackEnv recovers environment variables from Portainer stack.env,
 // host .env, or by extracting non-system environment variables from running containers.
 func (s *Service) ExtractOrSynthesizeStackEnv(ctx context.Context, workingDir string, containers []ContainerSummary) string {
+	if workingDir == "" && len(containers) > 0 {
+		for _, c := range containers {
+			if wDir := c.Labels["com.docker.compose.project.working_dir"]; wDir != "" {
+				workingDir = wDir
+				break
+			}
+			if cfgFile := c.Labels["com.docker.compose.project.config_files"]; cfgFile != "" {
+				files := strings.Split(cfgFile, ",")
+				if len(files) > 0 && strings.TrimSpace(files[0]) != "" {
+					workingDir = filepath.Dir(strings.TrimSpace(files[0]))
+					break
+				}
+			}
+		}
+	}
+
 	// 1. Check local host filesystem first (stack.env then .env)
 	if workingDir != "" {
 		for _, name := range []string{"stack.env", ".env"} {
