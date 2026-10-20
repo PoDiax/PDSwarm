@@ -2,6 +2,8 @@ package docker_test
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/docker/docker/api/types"
@@ -320,6 +322,22 @@ func TestSynthesizeComposeYAML(t *testing.T) {
 	}
 	if dbSvc.Image != "ghcr.io/immich-app/postgres:14-alpine" {
 		t.Errorf("unexpected image: %s", dbSvc.Image)
+	}
+}
+
+func TestExtractOrSynthesizeStackEnv_Disk(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	envFile := tmpDir + "/stack.env"
+	if err := os.WriteFile(envFile, []byte("PUID=1000\nIMMICH_VERSION=release\n"), 0644); err != nil {
+		t.Fatalf("failed to write test env file: %v", err)
+	}
+
+	svc := docker.NewServiceWithClient(nil)
+	recovered := svc.ExtractOrSynthesizeStackEnv(ctx, tmpDir, nil)
+	if !strings.Contains(recovered, "PUID=1000") || !strings.Contains(recovered, "IMMICH_VERSION=release") {
+		t.Errorf("failed to recover stack.env from disk: got %q", recovered)
 	}
 }
 

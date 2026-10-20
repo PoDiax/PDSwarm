@@ -31,15 +31,16 @@ type UpdateStackRequest struct {
 
 type AdoptStackRequest struct {
 	ComposeYAML string `json:"compose_yaml,omitempty"`
+	Env         string `json:"env,omitempty"`
 	WorkingDir  string `json:"working_dir,omitempty"`
 }
 
-func extractComposeDetails(ctx context.Context, ds *docker.Service, stackName string, containers []docker.ContainerSummary) (yamlContent string, configFilePath string, workingDir string) {
+func extractComposeDetails(ctx context.Context, ds *docker.Service, stackName string, containers []docker.ContainerSummary) (yamlContent string, envContent string, configFilePath string, workingDir string) {
 	if len(containers) == 0 {
-		return "", "", ""
+		return "", "", "", ""
 	}
 	if ds != nil {
-		return ds.ExtractOrSynthesizeComposeYAML(ctx, stackName, containers)
+		return ds.ExtractOrSynthesizeComposeDetails(ctx, stackName, containers)
 	}
 	c := containers[0]
 	workingDir = c.Labels["com.docker.compose.project.working_dir"]
@@ -60,7 +61,15 @@ func extractComposeDetails(ctx context.Context, ds *docker.Service, stackName st
 			}
 		}
 	}
-	return yamlContent, configFilePath, workingDir
+	if workingDir != "" {
+		for _, name := range []string{"stack.env", ".env"} {
+			if data, err := os.ReadFile(filepath.Join(workingDir, name)); err == nil && len(data) > 0 {
+				envContent = string(data)
+				break
+			}
+		}
+	}
+	return yamlContent, envContent, configFilePath, workingDir
 }
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -94,7 +103,7 @@ func HandleListStacks(st store.Store, ds *docker.Service) http.HandlerFunc {
 				if s.ComposeYAML == "" {
 					projContainers, _ := ds.GetStackContainers(r.Context(), s.Name)
 					if len(projContainers) > 0 {
-						recoveredYAML, cfgFile, wDir := extractComposeDetails(r.Context(), ds, s.Name, projContainers)
+						recoveredYAML, recoveredEnv, cfgFile, wDir := extractComposeDetails(r.Context(), ds, s.Name, projContainers)
 						if recoveredYAML != "" {
 							s.ComposeYAML = recoveredYAML
 							if s.ConfigFile == "" {
@@ -102,6 +111,9 @@ func HandleListStacks(st store.Store, ds *docker.Service) http.HandlerFunc {
 							}
 							if s.WorkingDir == "" {
 								s.WorkingDir = wDir
+							}
+							if s.Env == "" && recoveredEnv != "" {
+								s.Env = recoveredEnv
 							}
 							_ = st.SaveStack(s)
 						}
@@ -120,7 +132,7 @@ func HandleListStacks(st store.Store, ds *docker.Service) http.HandlerFunc {
 				}
 
 				for proj, projContainers := range discovered {
-					yamlContent, configFile, workingDir := extractComposeDetails(r.Context(), ds, proj, projContainers)
+					yamlContent, envContent, configFile, workingDir := extractComposeDetails(r.Context(), ds, proj, projContainers)
 					createdAt := time.Unix(projContainers[0].Created, 0)
 					if projContainers[0].Created == 0 {
 						createdAt = time.Now()
@@ -128,6 +140,7 @@ func HandleListStacks(st store.Store, ds *docker.Service) http.HandlerFunc {
 					stacks = append(stacks, &store.Stack{
 						Name:        proj,
 						ComposeYAML: yamlContent,
+						Env:         envContent,
 						Status:      "running",
 						IsExternal:  true,
 						ConfigFile:  configFile,
@@ -159,7 +172,7 @@ func HandleGetStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 				if ds != nil {
 					containers, cErr := ds.GetStackContainers(r.Context(), name)
 					if cErr == nil && len(containers) > 0 {
-						yamlContent, configFile, workingDir := extractComposeDetails(r.Context(), ds, name, containers)
+						yamlContent, envContent, configFile, workingDir := extractComposeDetails(r.Context(), ds, name, containers)
 						createdAt := time.Unix(containers[0].Created, 0)
 						if containers[0].Created == 0 {
 							createdAt = time.Now()
@@ -167,6 +180,7 @@ func HandleGetStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 						stack = &store.Stack{
 							Name:        name,
 							ComposeYAML: yamlContent,
+							Env:         envContent,
 							Status:      "running",
 							IsExternal:  true,
 							ConfigFile:  configFile,
@@ -196,7 +210,7 @@ func HandleGetStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 			containers, err := ds.GetStackContainers(r.Context(), name)
 			if err == nil {
 				if stack.ComposeYAML == "" && len(containers) > 0 {
-					recoveredYAML, cfgFile, wDir := extractComposeDetails(r.Context(), ds, name, containers)
+					recoveredYAML, recoveredEnv, cfgFile, wDir := extractComposeDetails(r.Context(), ds, name, containers)
 					if recoveredYAML != "" {
 						stack.ComposeYAML = recoveredYAML
 						if stack.ConfigFile == "" {
@@ -205,13 +219,16 @@ func HandleGetStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 						if stack.WorkingDir == "" {
 							stack.WorkingDir = wDir
 						}
+						if stack.Env == "" && recoveredEnv != "" {
+							stack.Env = recoveredEnv
+						}
 						_ = st.SaveStack(stack)
 					}
 				}
-				if stack.Env == "" && stack.WorkingDir != "" {
-					envFile := filepath.Join(stack.WorkingDir, ".env")
-					if envData, err := os.ReadFile(envFile); err == nil && len(envData) > 0 {
-						stack.Env = string(envData)
+				if stack.Env == "" && len(containers) > 0 {
+					recoveredEnv := ds.ExtractOrSynthesizeStackEnv(r.Context(), stack.WorkingDir, containers)
+					if recoveredEnv != "" {
+						stack.Env = recoveredEnv
 						_ = st.SaveStack(stack)
 					}
 				}
@@ -228,10 +245,13 @@ func HandleGetStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 		}
 
 		if stack.Env == "" && stack.WorkingDir != "" {
-			envFile := filepath.Join(stack.WorkingDir, ".env")
-			if envData, err := os.ReadFile(envFile); err == nil && len(envData) > 0 {
-				stack.Env = string(envData)
-				_ = st.SaveStack(stack)
+			for _, name := range []string{"stack.env", ".env"} {
+				envFile := filepath.Join(stack.WorkingDir, name)
+				if envData, err := os.ReadFile(envFile); err == nil && len(envData) > 0 {
+					stack.Env = string(envData)
+					_ = st.SaveStack(stack)
+					break
+				}
 			}
 		}
 
@@ -324,9 +344,10 @@ func HandleUpdateStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 				if ds != nil {
 					containers, cErr := ds.GetStackContainers(r.Context(), name)
 					if cErr == nil && len(containers) > 0 {
-						_, cfgFile, wDir := extractComposeDetails(r.Context(), ds, name, containers)
+						_, diskEnv, cfgFile, wDir := extractComposeDetails(r.Context(), ds, name, containers)
 						stack = &store.Stack{
 							Name:       name,
+							Env:        diskEnv,
 							ConfigFile: cfgFile,
 							WorkingDir: wDir,
 							CreatedAt:  time.Now(),
@@ -546,6 +567,7 @@ func HandleAdoptStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 		}
 
 		yamlContent := strings.TrimSpace(req.ComposeYAML)
+		envContent := strings.TrimSpace(req.Env)
 		workingDir := strings.TrimSpace(req.WorkingDir)
 		var configFile string
 		var createdAt time.Time
@@ -554,12 +576,15 @@ func HandleAdoptStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 		if ds != nil {
 			containers, err := ds.GetStackContainers(r.Context(), name)
 			if err == nil && len(containers) > 0 {
-				diskYAML, cfgFile, wDir := extractComposeDetails(r.Context(), ds, name, containers)
+				diskYAML, diskEnv, cfgFile, wDir := extractComposeDetails(r.Context(), ds, name, containers)
 				if yamlContent == "" {
 					yamlContent = diskYAML
 				}
 				if workingDir == "" {
 					workingDir = wDir
+				}
+				if envContent == "" {
+					envContent = diskEnv
 				}
 				configFile = cfgFile
 				if containers[0].Created > 0 {
@@ -577,6 +602,9 @@ func HandleAdoptStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 			if yamlContent == "" {
 				yamlContent = existing.ComposeYAML
 			}
+			if envContent == "" {
+				envContent = existing.Env
+			}
 			if workingDir == "" {
 				workingDir = existing.WorkingDir
 			}
@@ -590,8 +618,8 @@ func HandleAdoptStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 			return
 		}
 
-		// Validate Compose YAML
-		if _, err := docker.ParseComposeYAML(yamlContent); err != nil {
+		// Validate Compose YAML with env
+		if _, err := docker.ParseComposeYAMLWithEnv(yamlContent, docker.ParseEnvFile(envContent)); err != nil {
 			respondJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid compose YAML: %v", err))
 			return
 		}
@@ -599,6 +627,7 @@ func HandleAdoptStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 		stack := &store.Stack{
 			Name:        name,
 			ComposeYAML: yamlContent,
+			Env:         envContent,
 			Status:      "running",
 			IsExternal:  false, // Elevated to managed!
 			WorkingDir:  workingDir,

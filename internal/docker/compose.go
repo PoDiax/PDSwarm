@@ -1004,6 +1004,142 @@ func (s *Service) RecoverComposeFromPortainer(ctx context.Context, configFile st
 	return "", errors.New("compose file not found inside portainer container")
 }
 
+// RecoverEnvFromPortainer scans Portainer containers to recover stack.env or .env for the specified compose directory.
+func (s *Service) RecoverEnvFromPortainer(ctx context.Context, workingDir string) (string, error) {
+	if s == nil || s.cli == nil {
+		return "", errors.New("docker service not available")
+	}
+
+	allContainers, err := s.cli.ContainerList(ctx, container.ListOptions{All: true})
+	if err != nil {
+		return "", err
+	}
+
+	var portainerContainers []types.Container
+	for _, c := range allContainers {
+		isPortainer := strings.Contains(strings.ToLower(c.Image), "portainer")
+		if !isPortainer {
+			for _, n := range c.Names {
+				if strings.Contains(strings.ToLower(n), "portainer") {
+					isPortainer = true
+					break
+				}
+			}
+		}
+		if isPortainer {
+			portainerContainers = append(portainerContainers, c)
+		}
+	}
+
+	if len(portainerContainers) == 0 {
+		return "", errors.New("no portainer container found")
+	}
+
+	envNames := []string{"stack.env", ".env"}
+
+	for _, pc := range portainerContainers {
+		for _, envName := range envNames {
+			var pathsToTry []string
+			if workingDir != "" {
+				baseDir := workingDir
+				pathsToTry = append(pathsToTry, filepath.Join(baseDir, envName))
+				if strings.HasPrefix(baseDir, "/data/") {
+					pathsToTry = append(pathsToTry, filepath.Join(strings.TrimPrefix(baseDir, "/data"), envName))
+				}
+			}
+
+			// 1. Try reading directly from the container via Docker API
+			for _, p := range pathsToTry {
+				data, _, err := s.ReadContainerFile(ctx, pc.ID, p, 5*1024*1024)
+				if err == nil && len(data) > 0 {
+					return string(data), nil
+				}
+			}
+
+			// 2. Check Portainer container volume mounts on the host filesystem
+			cj, err := s.InspectContainer(ctx, pc.ID)
+			if err == nil {
+				for _, m := range cj.Mounts {
+					if m.Destination == "/data" && m.Source != "" {
+						rel := strings.TrimPrefix(workingDir, "/data")
+						candidate := filepath.Join(m.Source, rel, envName)
+						if hostData, err := os.ReadFile(candidate); err == nil && len(hostData) > 0 {
+							return string(hostData), nil
+						}
+					}
+					if m.Type == "volume" && m.Name != "" {
+						rel := strings.TrimPrefix(workingDir, "/data")
+						candidate := filepath.Join("/var/lib/docker/volumes", m.Name, "_data", rel, envName)
+						if hostData, err := os.ReadFile(candidate); err == nil && len(hostData) > 0 {
+							return string(hostData), nil
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return "", errors.New("env file not found inside portainer container")
+}
+
+// ExtractOrSynthesizeStackEnv recovers environment variables from Portainer stack.env,
+// host .env, or by extracting non-system environment variables from running containers.
+func (s *Service) ExtractOrSynthesizeStackEnv(ctx context.Context, workingDir string, containers []ContainerSummary) string {
+	// 1. Check local host filesystem first (stack.env then .env)
+	if workingDir != "" {
+		for _, name := range []string{"stack.env", ".env"} {
+			if data, err := os.ReadFile(filepath.Join(workingDir, name)); err == nil && len(data) > 0 {
+				return string(data)
+			}
+		}
+	}
+
+	// 2. Try recovering from Portainer container / volumes
+	if s != nil && workingDir != "" {
+		if envData, err := s.RecoverEnvFromPortainer(ctx, workingDir); err == nil && len(envData) > 0 {
+			return envData
+		}
+	}
+
+	// 3. Fallback: inspect stack containers and extract environment variables
+	if s != nil && len(containers) > 0 {
+		envMap := make(map[string]string)
+		for _, c := range containers {
+			cj, err := s.InspectContainer(ctx, c.ID)
+			if err != nil || cj.Config == nil {
+				continue
+			}
+			filtered := filterSystemEnv(cj.Config.Env)
+			for _, e := range filtered {
+				idx := strings.Index(e, "=")
+				if idx != -1 {
+					k := e[:idx]
+					v := e[idx+1:]
+					if _, exists := envMap[k]; !exists {
+						envMap[k] = v
+					}
+				}
+			}
+		}
+		if len(envMap) > 0 {
+			var sb strings.Builder
+			for k, v := range envMap {
+				sb.WriteString(fmt.Sprintf("%s=%s\n", k, v))
+			}
+			return sb.String()
+		}
+	}
+
+	return ""
+}
+
+// ExtractOrSynthesizeComposeDetails extracts Compose YAML, stack .env, config path, and working dir.
+func (s *Service) ExtractOrSynthesizeComposeDetails(ctx context.Context, stackName string, containers []ContainerSummary) (yamlContent string, envContent string, configFilePath string, workingDir string) {
+	yamlContent, configFilePath, workingDir = s.ExtractOrSynthesizeComposeYAML(ctx, stackName, containers)
+	envContent = s.ExtractOrSynthesizeStackEnv(ctx, workingDir, containers)
+	return yamlContent, envContent, configFilePath, workingDir
+}
+
 // SynthesizeComposeYAML inspects the containers belonging to a stack and generates
 // a complete, standard Docker Compose YAML definition.
 func SynthesizeComposeYAML(ctx context.Context, ds *Service, stackName string, containers []ContainerSummary) (string, error) {
