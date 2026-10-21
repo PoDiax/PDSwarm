@@ -1681,10 +1681,10 @@
   {#if redeployModalStack}
     {@const modalContainers = containers.filter(
       (c) =>
-        c.labels?.["com.docker.compose.project"] === redeployModalStack?.name ||
-        c.labels?.["io.kompose.service"] === redeployModalStack?.name ||
+        (c.Labels && c.Labels["com.docker.compose.project"] === redeployModalStack?.name) ||
+        (c.Labels && c.Labels["io.kompose.service"] === redeployModalStack?.name) ||
         (redeployModalStack?.is_external &&
-          (c.labels?.["com.docker.compose.project"] || "").toLowerCase() ===
+          ((c.Labels && c.Labels["com.docker.compose.project"]) || "").toLowerCase() ===
             redeployModalStack?.name.toLowerCase()),
     )}
     <div
@@ -1794,8 +1794,8 @@
             >
               {#each modalContainers as c}
                 <div class="flex items-center justify-between text-xs font-mono">
-                  <span class="text-cyan-300 font-semibold">{c.names?.[0]?.replace(/^\//, "") || c.id.slice(0, 12)}</span>
-                  <span class="text-slate-400 text-[11px] truncate max-w-[220px]">{c.image}</span>
+                  <span class="text-cyan-300 font-semibold">{c.Names?.[0]?.replace(/^\//, "") || c.Id.slice(0, 12)}</span>
+                  <span class="text-slate-400 text-[11px] truncate max-w-[220px]">{c.Image}</span>
                 </div>
               {/each}
             </div>
