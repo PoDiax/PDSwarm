@@ -5,12 +5,16 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/docker/docker/client"
 )
 
 type Service struct {
-	cli *client.Client
+	cli        *client.Client
+	stackCache *StackDetailCache
+	cacheOnce  sync.Once
 }
 
 func NewService(socketPath string) (*Service, error) {
@@ -34,11 +38,29 @@ func NewService(socketPath string) (*Service, error) {
 		return nil, fmt.Errorf("failed to create docker client: %w", err)
 	}
 
-	return &Service{cli: cli}, nil
+	return &Service{
+		cli:        cli,
+		stackCache: NewStackDetailCache(10 * time.Minute),
+	}, nil
 }
 
 func NewServiceWithClient(cli *client.Client) *Service {
-	return &Service{cli: cli}
+	return &Service{
+		cli:        cli,
+		stackCache: NewStackDetailCache(10 * time.Minute),
+	}
+}
+
+func (s *Service) GetStackDetailCache() *StackDetailCache {
+	if s == nil {
+		return nil
+	}
+	s.cacheOnce.Do(func() {
+		if s.stackCache == nil {
+			s.stackCache = NewStackDetailCache(10 * time.Minute)
+		}
+	})
+	return s.stackCache
 }
 
 func (s *Service) Ping(ctx context.Context) error {

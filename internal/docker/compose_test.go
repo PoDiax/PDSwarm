@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/podiax/pdswarm/internal/docker"
@@ -340,5 +341,51 @@ func TestExtractOrSynthesizeStackEnv_Disk(t *testing.T) {
 		t.Errorf("failed to recover stack.env from disk: got %q", recovered)
 	}
 }
+
+func TestService_BackgroundStackEnrichment(t *testing.T) {
+	svc := docker.NewServiceWithClient(nil)
+	cache := svc.GetStackDetailCache()
+	if cache == nil {
+		t.Fatalf("expected service to initialize StackDetailCache")
+	}
+
+	// Non-blocking call for empty or nil containers
+	svc.EnqueueStackEnrichment("empty-test", nil)
+
+	// Invalidate works via cache
+	cache.Set("test-proj", docker.CachedStackDetails{ComposeYAML: "services: {}"})
+	if _, ok := cache.Get("test-proj"); !ok {
+		t.Errorf("expected cached item")
+	}
+
+	// Enqueue with containers to test asynchronous background enrichment
+	containers := []docker.ContainerSummary{
+		{
+			ID:    "test-c1",
+			Image: "redis:alpine",
+			Names: []string{"/redis-svc"},
+			Labels: map[string]string{
+				docker.ComposeProjectLabel: "async-proj",
+				docker.ComposeServiceLabel: "redis",
+			},
+		},
+	}
+	svc.EnqueueStackEnrichment("async-proj", containers)
+
+	// Poll cache to verify background enrichment completed
+	deadline := time.Now().Add(2 * time.Second)
+	found := false
+	for time.Now().Before(deadline) {
+		if details, ok := cache.Get("async-proj"); ok && details.ComposeYAML != "" {
+			found = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !found {
+		t.Errorf("expected async-proj to be enriched in background cache")
+	}
+}
+
 
 

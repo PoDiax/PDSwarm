@@ -300,13 +300,23 @@ func (s *Service) DeployComposeStackWithProgress(ctx context.Context, name, comp
 	}, onProgress)
 }
 
+// DeployOptions configures options for stack deployment.
+type DeployOptions struct {
+	PullImages bool `json:"pull_images"`
+}
+
 // DeployStack deploys a stack defined by store.Stack into the Docker daemon.
 func (s *Service) DeployStack(ctx context.Context, stack *store.Stack) error {
-	return s.DeployStackWithProgress(ctx, stack, nil)
+	return s.DeployStackWithOptions(ctx, stack, nil, DeployOptions{})
 }
 
 // DeployStackWithProgress deploys a stack defined by store.Stack with real-time progress callbacks.
 func (s *Service) DeployStackWithProgress(ctx context.Context, stack *store.Stack, onProgress DeployProgressFunc) error {
+	return s.DeployStackWithOptions(ctx, stack, onProgress, DeployOptions{})
+}
+
+// DeployStackWithOptions deploys a stack with options and real-time progress callbacks.
+func (s *Service) DeployStackWithOptions(ctx context.Context, stack *store.Stack, onProgress DeployProgressFunc, opts DeployOptions) error {
 	if stack == nil {
 		return errors.New("stack cannot be nil")
 	}
@@ -438,9 +448,16 @@ func (s *Service) DeployStackWithProgress(ctx context.Context, stack *store.Stac
 
 	// Deploy each service
 	for serviceName, svcCfg := range cfg.Services {
-		// Pull image if not already present
-		_, _, inspectErr := s.cli.ImageInspectWithRaw(ctx, svcCfg.Image)
-		if inspectErr != nil {
+		// Pull image if forced (PullImages=true) or not already present
+		shouldPull := opts.PullImages
+		if !shouldPull {
+			_, _, inspectErr := s.cli.ImageInspectWithRaw(ctx, svcCfg.Image)
+			if inspectErr != nil {
+				shouldPull = true
+			}
+		}
+
+		if shouldPull {
 			emit(DeployEvent{
 				Step:    "pull",
 				Service: serviceName,
@@ -935,7 +952,15 @@ func (s *Service) RecoverComposeFromPortainer(ctx context.Context, configFile st
 		return "", errors.New("docker service not available")
 	}
 
-	allContainers, err := s.cli.ContainerList(ctx, container.ListOptions{All: true})
+	trimmed := strings.TrimSpace(configFile)
+	if !strings.Contains(trimmed, "compose") && !strings.HasPrefix(trimmed, "/data/") {
+		return "", errors.New("not a portainer compose path")
+	}
+
+	pCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	allContainers, err := s.cli.ContainerList(pCtx, container.ListOptions{All: true})
 	if err != nil {
 		return "", err
 	}
@@ -962,36 +987,36 @@ func (s *Service) RecoverComposeFromPortainer(ctx context.Context, configFile st
 
 	for _, pc := range portainerContainers {
 		// 1. Try reading directly from the container via Docker API
-		pathsToTry := []string{configFile}
-		if strings.HasPrefix(configFile, "/data/") {
-			pathsToTry = append(pathsToTry, strings.TrimPrefix(configFile, "/data"))
-		} else if !strings.HasPrefix(configFile, "/") {
-			pathsToTry = append(pathsToTry, "/"+configFile)
-			pathsToTry = append(pathsToTry, "/data/"+configFile)
+		pathsToTry := []string{trimmed}
+		if strings.HasPrefix(trimmed, "/data/") {
+			pathsToTry = append(pathsToTry, strings.TrimPrefix(trimmed, "/data"))
+		} else if !strings.HasPrefix(trimmed, "/") {
+			pathsToTry = append(pathsToTry, "/"+trimmed)
+			pathsToTry = append(pathsToTry, "/data/"+trimmed)
 		} else {
-			pathsToTry = append(pathsToTry, "/data"+configFile)
+			pathsToTry = append(pathsToTry, "/data"+trimmed)
 		}
 
 		for _, p := range pathsToTry {
-			data, _, err := s.ReadContainerFile(ctx, pc.ID, p, 5*1024*1024)
+			data, _, err := s.ReadContainerFile(pCtx, pc.ID, p, 5*1024*1024)
 			if err == nil && len(data) > 0 {
 				return string(data), nil
 			}
 		}
 
 		// 2. Check Portainer container volume mounts on the host filesystem
-		cj, err := s.InspectContainer(ctx, pc.ID)
+		cj, err := s.InspectContainer(pCtx, pc.ID)
 		if err == nil {
 			for _, m := range cj.Mounts {
 				if m.Destination == "/data" && m.Source != "" {
-					rel := strings.TrimPrefix(configFile, "/data")
+					rel := strings.TrimPrefix(trimmed, "/data")
 					candidate := filepath.Join(m.Source, rel)
 					if hostData, err := os.ReadFile(candidate); err == nil && len(hostData) > 0 {
 						return string(hostData), nil
 					}
 				}
 				if m.Type == "volume" && m.Name != "" {
-					rel := strings.TrimPrefix(configFile, "/data")
+					rel := strings.TrimPrefix(trimmed, "/data")
 					candidate := filepath.Join("/var/lib/docker/volumes", m.Name, "_data", rel)
 					if hostData, err := os.ReadFile(candidate); err == nil && len(hostData) > 0 {
 						return string(hostData), nil
@@ -1010,7 +1035,15 @@ func (s *Service) RecoverEnvFromPortainer(ctx context.Context, workingDir string
 		return "", errors.New("docker service not available")
 	}
 
-	allContainers, err := s.cli.ContainerList(ctx, container.ListOptions{All: true})
+	cleanDir := strings.TrimSpace(workingDir)
+	if !strings.Contains(cleanDir, "compose") && !strings.HasPrefix(cleanDir, "/data/") {
+		return "", errors.New("not a portainer compose directory")
+	}
+
+	pCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	allContainers, err := s.cli.ContainerList(pCtx, container.ListOptions{All: true})
 	if err != nil {
 		return "", err
 	}
@@ -1038,37 +1071,39 @@ func (s *Service) RecoverEnvFromPortainer(ctx context.Context, workingDir string
 	envNames := []string{"stack.env", ".env"}
 
 	for _, pc := range portainerContainers {
+		// 1. Try reading directly from the container via Docker API
 		for _, envName := range envNames {
 			var pathsToTry []string
-			if workingDir != "" {
-				baseDir := workingDir
+			if cleanDir != "" {
+				baseDir := cleanDir
 				pathsToTry = append(pathsToTry, filepath.Join(baseDir, envName))
 				if strings.HasPrefix(baseDir, "/data/") {
 					pathsToTry = append(pathsToTry, filepath.Join(strings.TrimPrefix(baseDir, "/data"), envName))
 				}
 			}
 
-			// 1. Try reading directly from the container via Docker API
 			for _, p := range pathsToTry {
-				data, _, err := s.ReadContainerFile(ctx, pc.ID, p, 5*1024*1024)
+				data, _, err := s.ReadContainerFile(pCtx, pc.ID, p, 5*1024*1024)
 				if err == nil && len(data) > 0 {
 					return string(data), nil
 				}
 			}
+		}
 
-			// 2. Check Portainer container volume mounts on the host filesystem
-			cj, err := s.InspectContainer(ctx, pc.ID)
-			if err == nil {
-				for _, m := range cj.Mounts {
+		// 2. Check Portainer container volume mounts on the host filesystem
+		cj, err := s.InspectContainer(pCtx, pc.ID)
+		if err == nil {
+			for _, m := range cj.Mounts {
+				for _, envName := range envNames {
 					if m.Destination == "/data" && m.Source != "" {
-						rel := strings.TrimPrefix(workingDir, "/data")
+						rel := strings.TrimPrefix(cleanDir, "/data")
 						candidate := filepath.Join(m.Source, rel, envName)
 						if hostData, err := os.ReadFile(candidate); err == nil && len(hostData) > 0 {
 							return string(hostData), nil
 						}
 					}
 					if m.Type == "volume" && m.Name != "" {
-						rel := strings.TrimPrefix(workingDir, "/data")
+						rel := strings.TrimPrefix(cleanDir, "/data")
 						candidate := filepath.Join("/var/lib/docker/volumes", m.Name, "_data", rel, envName)
 						if hostData, err := os.ReadFile(candidate); err == nil && len(hostData) > 0 {
 							return string(hostData), nil
@@ -1119,9 +1154,11 @@ func (s *Service) ExtractOrSynthesizeStackEnv(ctx context.Context, workingDir st
 
 	// 3. Fallback: inspect stack containers and extract environment variables
 	if s != nil && len(containers) > 0 {
+		inspectCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+		defer cancel()
 		envMap := make(map[string]string)
 		for _, c := range containers {
-			cj, err := s.InspectContainer(ctx, c.ID)
+			cj, err := s.InspectContainer(inspectCtx, c.ID)
 			if err != nil || cj.Config == nil {
 				continue
 			}
@@ -1156,12 +1193,43 @@ func (s *Service) ExtractOrSynthesizeComposeDetails(ctx context.Context, stackNa
 	return yamlContent, envContent, configFilePath, workingDir
 }
 
+// EnqueueStackEnrichment enqueues a background non-blocking job to extract/synthesize compose details
+// and cache them for fast retrieval.
+func (s *Service) EnqueueStackEnrichment(name string, containers []ContainerSummary) {
+	if s == nil || len(containers) == 0 {
+		return
+	}
+	cache := s.GetStackDetailCache()
+	if cache == nil {
+		return
+	}
+
+	containersCopy := append([]ContainerSummary(nil), containers...)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		yamlContent, envContent, cfg, wDir := s.ExtractOrSynthesizeComposeDetails(ctx, name, containersCopy)
+		if yamlContent != "" || envContent != "" {
+			cache.Set(name, CachedStackDetails{
+				ComposeYAML: yamlContent,
+				Env:         envContent,
+				ConfigFile:  cfg,
+				WorkingDir:  wDir,
+			})
+		}
+	}()
+}
+
 // SynthesizeComposeYAML inspects the containers belonging to a stack and generates
 // a complete, standard Docker Compose YAML definition.
 func SynthesizeComposeYAML(ctx context.Context, ds *Service, stackName string, containers []ContainerSummary) (string, error) {
 	if len(containers) == 0 {
 		return "", errors.New("no containers provided to synthesize compose yaml")
 	}
+
+	synthCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 
 	services := make(map[string]map[string]interface{})
 	topVolumes := make(map[string]interface{})
@@ -1172,7 +1240,7 @@ func SynthesizeComposeYAML(ctx context.Context, ds *Service, stackName string, c
 		var cj types.ContainerJSON
 		var err error
 		if ds != nil {
-			cj, err = ds.InspectContainer(ctx, c.ID)
+			cj, err = ds.InspectContainer(synthCtx, c.ID)
 		}
 		if err != nil || ds == nil {
 			cj = types.ContainerJSON{
@@ -1461,7 +1529,7 @@ func (s *Service) ExtractOrSynthesizeComposeYAML(ctx context.Context, stackName 
 			}
 
 			// 2. If path is a Portainer compose path (e.g. /data/compose/...), try recovering from Portainer container
-			if s != nil {
+			if s != nil && (strings.Contains(trimmed, "compose") || strings.HasPrefix(trimmed, "/data/")) {
 				if portainerYAML, err := s.RecoverComposeFromPortainer(ctx, trimmed); err == nil && len(portainerYAML) > 0 {
 					yamlContent = portainerYAML
 					if workingDir == "" {
