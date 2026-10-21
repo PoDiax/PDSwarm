@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/podiax/pdswarm/internal/docker"
 	"github.com/podiax/pdswarm/internal/store"
+	"github.com/podiax/pdswarm/internal/tasks"
 )
 
 type CreateStackRequest struct {
@@ -427,25 +428,73 @@ func HandleUpdateStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 		}
 
 		if shouldDeploy && ds != nil {
-			if err := ds.DeployStackWithOptions(r.Context(), stack, nil, docker.DeployOptions{
-				PullImages: req.PullImages,
-			}); err != nil {
-				stack.Status = "error"
-				_ = st.SaveStack(stack)
-				respondJSONError(w, http.StatusInternalServerError, fmt.Sprintf("failed to deploy updated stack: %v", err))
+			stack.Status = "deploying"
+			if err := st.SaveStack(stack); err != nil {
+				respondJSONError(w, http.StatusInternalServerError, "failed to save stack: "+err.Error())
 				return
 			}
-			stack.Status = "running"
-		}
 
-		if err := st.SaveStack(stack); err != nil {
-			respondJSONError(w, http.StatusInternalServerError, "failed to save stack: "+err.Error())
-			return
-		}
+			taskStack := *stack
+			tasks.DefaultManager().Start(
+				tasks.TypeStackDeploy,
+				fmt.Sprintf("Redeploy stack %s", stack.Name),
+				stack.Name,
+				func(ctx context.Context, t *tasks.Task) error {
+					t.SetProgress(5, fmt.Sprintf("Preparing deployment for %s...", taskStack.Name))
+					t.AppendLog(fmt.Sprintf("Starting redeployment for stack %q", taskStack.Name))
 
-		if ds != nil {
-			if cache := ds.GetStackDetailCache(); cache != nil {
-				cache.Invalidate(name)
+					onProgress := func(evt docker.DeployEvent) {
+						if evt.Status != "" {
+							t.AppendLog(evt.Status)
+						}
+						if evt.Detail != "" {
+							t.AppendLog(evt.Detail)
+						}
+						switch evt.Step {
+						case "init":
+							t.SetProgress(5, evt.Status)
+						case "network":
+							t.SetProgress(15, evt.Status)
+						case "pull":
+							t.SetProgress(40, evt.Status)
+						case "recreate":
+							t.SetProgress(70, evt.Status)
+						case "start":
+							t.SetProgress(85, evt.Status)
+						case "complete":
+							t.SetProgress(100, evt.Status)
+						}
+					}
+
+					deployErr := ds.DeployStackWithOptions(ctx, &taskStack, onProgress, docker.DeployOptions{
+						PullImages: req.PullImages,
+					})
+					if deployErr != nil {
+						taskStack.Status = "error"
+						_ = st.SaveStack(&taskStack)
+						t.AppendLog(fmt.Sprintf("Deployment failed: %v", deployErr))
+						return deployErr
+					}
+
+					taskStack.Status = "running"
+					_ = st.SaveStack(&taskStack)
+					if cache := ds.GetStackDetailCache(); cache != nil {
+						cache.Invalidate(taskStack.Name)
+					}
+					t.SetProgress(100, "Completed")
+					t.AppendLog(fmt.Sprintf("Stack %q redeployed successfully", taskStack.Name))
+					return nil
+				},
+			)
+		} else {
+			if err := st.SaveStack(stack); err != nil {
+				respondJSONError(w, http.StatusInternalServerError, "failed to save stack: "+err.Error())
+				return
+			}
+			if ds != nil {
+				if cache := ds.GetStackDetailCache(); cache != nil {
+					cache.Invalidate(name)
+				}
 			}
 		}
 

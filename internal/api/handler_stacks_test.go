@@ -13,6 +13,7 @@ import (
 	"github.com/podiax/pdswarm/internal/api"
 	"github.com/podiax/pdswarm/internal/docker"
 	"github.com/podiax/pdswarm/internal/store"
+	"github.com/podiax/pdswarm/internal/tasks"
 )
 
 func setupTestStore(t *testing.T) store.Store {
@@ -365,6 +366,35 @@ func TestHandleUpdateStack(t *testing.T) {
 	}
 	if updated.ComposeYAML != "services:\n  app:\n    image: nginx:alpine" {
 		t.Errorf("stack YAML was not updated in store")
+	}
+
+	// Valid update with deploy=true and mock docker service triggers background task
+	mockDS, err := docker.NewService("/tmp/mock-nonexistent-socket.sock")
+	if err == nil {
+		defer mockDS.Close()
+		rWithDS := setupStackRouter(st, mockDS)
+		body, _ = json.Marshal(map[string]interface{}{
+			"compose_yaml": "services:\n  app:\n    image: nginx:latest",
+			"deploy":       true,
+		})
+		req = httptest.NewRequest(http.MethodPut, "/api/stacks/update-test", bytes.NewReader(body))
+		rec = httptest.NewRecorder()
+		rWithDS.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for deploy update, got %d: %s", rec.Code, rec.Body.String())
+		}
+		// Verify background task was enqueued
+		taskList := tasks.DefaultManager().List()
+		found := false
+		for _, task := range taskList {
+			if task.Type == tasks.TypeStackDeploy && task.Target == "update-test" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected background task of type stack_deploy for update-test, but not found")
+		}
 	}
 }
 

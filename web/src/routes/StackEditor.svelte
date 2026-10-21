@@ -26,6 +26,7 @@
   } from '@lucide/svelte';
   import YamlEditor from "../lib/components/YamlEditor.svelte";
   import { stackApi } from "../lib/api";
+  import { tasksStore } from "../lib/stores/tasks.svelte";
   import type { Stack } from "../lib/types";
   import {
     detectRelativeVolumes,
@@ -381,8 +382,20 @@
     }
   });
 
+  // Modal State for Redeploy Confirmation & Image Pulling
+  let isRedeployModalOpen = $state(false);
+  let pullLatestImages = $state(true);
+
+  function onRedeployClick() {
+    if (isEditing) {
+      isRedeployModalOpen = true;
+    } else {
+      handleDeploy(true, false);
+    }
+  }
+
   // Save or Deploy Action
-  async function handleDeploy(shouldDeploy = true) {
+  async function handleDeploy(shouldDeploy = true, pullImages = false) {
     const trimmedName = name.trim();
     if (!trimmedName) {
       submitError = "Stack name is required.";
@@ -416,9 +429,13 @@
 
     try {
       if (isEditing) {
-        await stackApi.update(trimmedName, composeYaml, shouldDeploy, stackEnv);
+        await stackApi.update(trimmedName, composeYaml, shouldDeploy, stackEnv, pullImages);
       } else {
-        await stackApi.create(trimmedName, composeYaml, shouldDeploy, stackEnv);
+        await stackApi.create(trimmedName, composeYaml, shouldDeploy, stackEnv, pullImages);
+      }
+
+      if (shouldDeploy) {
+        tasksStore.poll();
       }
 
       successNotice = shouldDeploy
@@ -448,7 +465,7 @@
   function handleGlobalKeyDown(e: KeyboardEvent) {
     if ((e.ctrlKey || e.metaKey) && e.key === "s") {
       e.preventDefault();
-      handleDeploy(true);
+      onRedeployClick();
     }
   }
 
@@ -534,13 +551,13 @@
       </button>
 
       <button
-        onclick={() => handleDeploy(true)}
+        onclick={onRedeployClick}
         disabled={isSaving ||
           isDeploying ||
           !isNameValid ||
           !composeYaml.trim() ||
           !isYamlValid}
-        class="flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-[0_0_20px_rgba(124,58,237,0.4)] border border-violet-400/30 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        class="flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-[0_0_20px_rgba(124,58,237,0.4)] border border-violet-400/30 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
       >
         {#if isDeploying}
           <LoaderCircle class="w-4 h-4 animate-spin" />
@@ -1078,4 +1095,107 @@
       {/if}
     </div>
   </div>
+
+  <!-- Redeploy Confirmation Modal (Asks to re-pull images) -->
+  {#if isRedeployModalOpen}
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in"
+    >
+      <div
+        class="w-full max-w-lg rounded-2xl bg-[#12131c] border border-white/[0.1] p-6 space-y-5 shadow-2xl animate-in zoom-in-95 duration-150"
+      >
+        <div class="flex items-center gap-3">
+          <div
+            class="w-10 h-10 rounded-xl bg-violet-500/15 border border-violet-500/30 flex items-center justify-center text-violet-400 shrink-0"
+          >
+            <RotateCw class="w-5 h-5 text-violet-400" />
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-white">Redeploy Stack: {name}</h3>
+            <p class="text-xs text-slate-400">
+              Recreate container services with your updated Compose &amp; environment configuration.
+            </p>
+          </div>
+        </div>
+
+        <!-- Services list preview -->
+        {#if parsedServices.length > 0}
+          <div class="space-y-1.5">
+            <div
+              class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider"
+            >
+              Affected Services ({parsedServices.length})
+            </div>
+            <div
+              class="p-2.5 rounded-xl bg-[#090a10] border border-white/[0.06] max-h-36 overflow-y-auto space-y-1.5"
+            >
+              {#each parsedServices as svc}
+                <div
+                  class="flex items-center justify-between text-xs font-mono"
+                >
+                  <span class="text-cyan-300 font-semibold">{svc.name}</span>
+                  <span
+                    class="text-slate-400 text-[11px] truncate max-w-[220px]"
+                    >{svc.image}</span
+                  >
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+        <!-- Pull Latest Images Toggle Checkbox -->
+        <label
+          class="flex items-start gap-3 p-3.5 rounded-xl bg-violet-500/10 border border-violet-500/25 hover:border-violet-500/40 transition cursor-pointer select-none"
+        >
+          <input
+            type="checkbox"
+            bind:checked={pullLatestImages}
+            class="mt-0.5 rounded border-violet-500/40 bg-black/40 text-violet-500 focus:ring-0 cursor-pointer"
+          />
+          <div class="text-xs space-y-0.5">
+            <div class="font-semibold text-violet-200 flex items-center gap-1.5">
+              <span>Re-pull latest images before redeploying</span>
+              <span
+                class="px-1.5 py-0.2 rounded text-[9px] font-mono bg-violet-500/25 text-violet-300 border border-violet-500/40"
+                >Recommended</span
+              >
+            </div>
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+              Pulls the newest image tags from remote registries before restarting containers. If unchecked, uses existing cached local images for a faster restart.
+            </p>
+          </div>
+        </label>
+
+        <!-- Modal Actions -->
+        <div class="flex items-center justify-end gap-2.5 pt-2">
+          <button
+            type="button"
+            onclick={() => (isRedeployModalOpen = false)}
+            disabled={isDeploying}
+            class="px-4 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-slate-300 text-xs font-semibold transition cursor-pointer"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            onclick={() => {
+              isRedeployModalOpen = false;
+              handleDeploy(true, pullLatestImages);
+            }}
+            disabled={isDeploying}
+            class="flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-[0_0_20px_rgba(124,58,237,0.4)] border border-violet-400/30 transition cursor-pointer"
+          >
+            <RotateCw class="w-3.5 h-3.5 text-cyan-300" />
+            <span
+              >{pullLatestImages
+                ? "Pull Images & Redeploy"
+                : "Redeploy with Existing Images"}</span
+            >
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>

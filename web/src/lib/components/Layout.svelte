@@ -2,7 +2,6 @@
   import type { Snippet } from 'svelte';
   import Sidebar from './Sidebar.svelte';
   import Navbar from './Navbar.svelte';
-  import FloatingTasksBar from './FloatingTasksBar.svelte';
   import type { User } from '../types';
 
   interface Props {
@@ -80,9 +79,6 @@
       {onLogout}
       onToggleSidebar={toggleMobileSidebar}
     />
-
-    <!-- Floating Top-Right Background Tasks Notification Bar -->
-    <FloatingTasksBar />
 
     <main class="flex-1 min-h-0 w-full max-w-7xl mx-auto flex flex-col {activeTab === 'templates' ? 'p-3 md:p-5 overflow-hidden' : 'p-4 md:p-8 overflow-y-auto'}">
       {#if children}

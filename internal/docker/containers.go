@@ -210,10 +210,16 @@ func ContainerToCreateRequestWithImageEnv(c types.ContainerJSON, imageEnv []stri
 }
 
 func (s *Service) ListContainers(ctx context.Context, all bool) ([]types.Container, error) {
+	if s == nil || s.cli == nil {
+		return nil, errors.New("docker service not available")
+	}
 	return s.cli.ContainerList(ctx, container.ListOptions{All: all})
 }
 
 func (s *Service) InspectContainer(ctx context.Context, id string) (types.ContainerJSON, error) {
+	if s == nil || s.cli == nil {
+		return types.ContainerJSON{}, errors.New("docker service not available")
+	}
 	return s.cli.ContainerInspect(ctx, id)
 }
 

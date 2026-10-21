@@ -38,6 +38,15 @@
     selectedTaskForLogs = null;
   }
 
+  async function handleCancel(taskId: string, e: MouseEvent) {
+    e.stopPropagation();
+    try {
+      await tasksStore.cancelTask(taskId);
+    } catch {
+      // handled in store
+    }
+  }
+
   let activeCount = $derived(tasksStore.activeCount);
   let activeTasks = $derived(tasksStore.activeTasks);
 </script>
@@ -89,13 +98,22 @@
                   </div>
                 </div>
 
-                <button
-                  onclick={(e) => openLogs(task, e)}
-                  class="p-1 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-cyan-500/10 transition shrink-0"
-                  title="View Logs"
-                >
-                  <Terminal class="w-3.5 h-3.5" />
-                </button>
+                <div class="flex items-center gap-1 shrink-0">
+                  <button
+                    onclick={(e) => openLogs(task, e)}
+                    class="p-1 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-cyan-500/10 transition"
+                    title="View Logs"
+                  >
+                    <Terminal class="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onclick={(e) => handleCancel(task.id, e)}
+                    class="p-1 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                    title="Cancel Task"
+                  >
+                    <X class="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
               <!-- Progress bar -->

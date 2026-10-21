@@ -34,6 +34,7 @@
   import ViewportGate from "../lib/components/ViewportGate.svelte";
   import { stackApi, containerApi } from "../lib/api";
   import { imageUpdateStore } from "../lib/stores/imageUpdates.svelte";
+  import { tasksStore } from "../lib/stores/tasks.svelte";
   import type { Stack, Container } from "../lib/types";
   import {
     detectRelativeVolumes,
@@ -460,36 +461,52 @@
     }
   }
 
-  // Modal state for relative volumes resolution during redeploy
+  // Modal state for redeploy confirmation & relative volumes resolution
   let redeployModalStack = $state<Stack | null>(null);
   let redeployRelativePaths = $state<string[]>([]);
   let redeployComposeDir = $state<string>("");
   let redeployAutoConvert = $state<boolean>(true);
+  let redeployPullImages = $state<boolean>(true);
   let isRedeploySubmitting = $state<boolean>(false);
 
   // Action: Deploy / Redeploy
-  function handleRedeploy(stack: Stack) {
-    const relPaths = detectRelativeVolumes(stack.compose_yaml);
-    const composeDir = getStackComposeDir(stack);
-    if (relPaths.length > 0) {
-      redeployModalStack = stack;
-      redeployRelativePaths = relPaths;
-      redeployComposeDir = composeDir || "";
-      redeployAutoConvert = true;
-      return;
+  async function handleRedeploy(stack: Stack) {
+    if (!stack.compose_yaml) {
+      try {
+        actionBusy[stack.name] = "deploying";
+        const detailed = await stackApi.get(stack.name);
+        if (detailed && detailed.compose_yaml) {
+          stack.compose_yaml = detailed.compose_yaml;
+          stack.env = detailed.env;
+          stack.working_dir = detailed.working_dir;
+          stack.config_file = detailed.config_file;
+        }
+      } catch {
+        // proceed with whatever is present
+      } finally {
+        delete actionBusy[stack.name];
+      }
     }
-    executeRedeploy(stack, stack.compose_yaml);
+    const relPaths = detectRelativeVolumes(stack.compose_yaml || "");
+    const composeDir = getStackComposeDir(stack);
+    redeployModalStack = stack;
+    redeployRelativePaths = relPaths;
+    redeployComposeDir = composeDir || "";
+    redeployAutoConvert = true;
+    redeployPullImages = true;
   }
 
   async function executeRedeploy(
     stack: Stack,
     yamlToDeploy: string,
     newWorkingDir?: string,
+    pullImages = true,
   ) {
     actionBusy[stack.name] = "deploying";
     try {
-      await stackApi.update(stack.name, yamlToDeploy, true);
-      showFeedback("success", `Stack "${stack.name}" deployed successfully.`);
+      await stackApi.update(stack.name, yamlToDeploy, true, stack.env, pullImages);
+      showFeedback("success", `Stack "${stack.name}" redeployment started in background.`);
+      tasksStore.poll();
       await loadData(true);
     } catch (err: unknown) {
       showFeedback(
@@ -501,19 +518,19 @@
     }
   }
 
-  async function confirmRedeployWithConversion() {
+  async function confirmRedeploy() {
     if (!redeployModalStack) return;
     const stack = redeployModalStack;
     isRedeploySubmitting = true;
 
     try {
-      let yaml = stack.compose_yaml;
+      let yaml = stack.compose_yaml || "";
       const dir = redeployComposeDir.trim();
-      if (redeployAutoConvert && dir) {
+      if (redeployAutoConvert && dir && redeployRelativePaths.length > 0) {
         yaml = resolveRelativeVolumesInYaml(yaml, dir);
       }
       redeployModalStack = null;
-      await executeRedeploy(stack, yaml, dir || undefined);
+      await executeRedeploy(stack, yaml, dir || undefined, redeployPullImages);
     } catch (err: unknown) {
       showFeedback(
         "error",
@@ -528,7 +545,7 @@
     if (!redeployModalStack) return;
     const stack = redeployModalStack;
     redeployModalStack = null;
-    await executeRedeploy(stack, stack.compose_yaml);
+    await executeRedeploy(stack, stack.compose_yaml || "", undefined, redeployPullImages);
   }
 
   // Action: Stop
@@ -1660,109 +1677,153 @@
     </div>
   {/if}
 
-  <!-- Relative Volume Resolution & Redeploy Confirmation Modal -->
+  <!-- Redeploy Confirmation Modal -->
   {#if redeployModalStack}
+    {@const modalContainers = containers.filter(
+      (c) =>
+        c.labels?.["com.docker.compose.project"] === redeployModalStack?.name ||
+        c.labels?.["io.kompose.service"] === redeployModalStack?.name ||
+        (redeployModalStack?.is_external &&
+          (c.labels?.["com.docker.compose.project"] || "").toLowerCase() ===
+            redeployModalStack?.name.toLowerCase()),
+    )}
     <div
       class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in"
     >
       <div
-        class="w-full max-w-lg rounded-2xl bg-[#12131c] border border-amber-500/40 p-6 space-y-5 shadow-[0_0_50px_rgba(245,158,11,0.2)]"
+        class="w-full max-w-lg rounded-2xl bg-[#12131c] border {redeployRelativePaths.length > 0 ? 'border-amber-500/40 shadow-[0_0_50px_rgba(245,158,11,0.2)]' : 'border-white/[0.1] shadow-2xl'} p-6 space-y-5 animate-in zoom-in-95 duration-150"
       >
         <!-- Header -->
-        <div class="flex items-center gap-3 text-amber-400">
+        <div class="flex items-center gap-3">
           <div
-            class="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center"
+            class="w-10 h-10 rounded-xl {redeployRelativePaths.length > 0 ? 'bg-amber-500/15 border border-amber-500/30 text-amber-400' : 'bg-violet-500/15 border border-violet-500/30 text-violet-400'} flex items-center justify-center shrink-0"
           >
-            <TriangleAlert class="w-5 h-5 text-amber-400" />
+            {#if redeployRelativePaths.length > 0}
+              <TriangleAlert class="w-5 h-5 text-amber-400" />
+            {:else}
+              <RotateCw class="w-5 h-5 text-violet-400" />
+            {/if}
           </div>
           <div>
             <h3 class="text-base font-bold text-white">
-              Relative Volume Paths Detected
+              {redeployRelativePaths.length > 0
+                ? "Relative Volume Paths & Redeploy"
+                : `Redeploy Stack: ${redeployModalStack.name}`}
             </h3>
             <p class="text-xs text-slate-400">
-              Stack: <span class="font-mono text-cyan-300 font-semibold"
-                >{redeployModalStack.name}</span
-              >
+              {redeployRelativePaths.length > 0
+                ? `Stack: ${redeployModalStack.name}`
+                : "Recreate container services with your updated Compose configuration."}
             </p>
           </div>
         </div>
 
-        <p class="text-xs text-slate-300 leading-relaxed">
-          This stack's Compose file uses relative paths for host directory
-          mounts:
-        </p>
-
-        <!-- Relative paths list -->
-        <div
-          class="p-3 rounded-xl bg-[#090a10] border border-white/[0.08] space-y-2 max-h-40 overflow-y-auto font-mono text-xs"
-        >
-          {#each redeployRelativePaths as relPath}
-            <div class="flex items-center justify-between text-[11px]">
-              <span class="text-amber-300 font-semibold">{relPath}</span>
-              {#if redeployComposeDir}
-                <span class="text-slate-500 mx-2">→</span>
-                <span
-                  class="text-cyan-300 truncate max-w-[240px]"
-                  title="{redeployComposeDir.replace(
-                    /\/+$/,
-                    '',
-                  )}/{relPath.replace(/^\.\/?/, '')}"
-                >
-                  {redeployComposeDir.replace(/\/+$/, "")}/{relPath.replace(
-                    /^\.\/?/,
-                    "",
-                  )}
-                </span>
-              {/if}
-            </div>
-          {/each}
-        </div>
-
-        <!-- Compose directory input -->
-        <div class="space-y-1.5 text-xs">
-          <label
-            for="redeploy-compose-dir"
-            class="font-semibold text-slate-300 flex items-center gap-1.5"
-          >
-            <Folder class="w-3.5 h-3.5 text-cyan-400" />
-            <span>Host Compose Directory (YAML Location)</span>
-          </label>
-          <input
-            id="redeploy-compose-dir"
-            type="text"
-            bind:value={redeployComposeDir}
-            placeholder="e.g. /mnt/nvme_data/gitea"
-            class="w-full px-3 py-2 rounded-xl bg-[#090a10] border border-white/[0.1] text-xs font-mono text-white focus:outline-none focus:border-cyan-500/50"
-          />
-          <p class="text-[11px] text-slate-400">
-            Docker will fail to mount relative folders if executed without the
-            directory where the <code class="text-slate-300"
-              >docker-compose.yml</code
-            > file lives.
+        <!-- Relative Volume Warnings (if detected) -->
+        {#if redeployRelativePaths.length > 0}
+          <p class="text-xs text-slate-300 leading-relaxed">
+            This stack's Compose file uses relative paths for host directory mounts:
           </p>
-        </div>
 
-        <!-- Checkbox option -->
-        {#if redeployComposeDir.trim()}
-          <label
-            class="flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 cursor-pointer select-none"
+          <div
+            class="p-3 rounded-xl bg-[#090a10] border border-white/[0.08] space-y-2 max-h-36 overflow-y-auto font-mono text-xs"
           >
+            {#each redeployRelativePaths as relPath}
+              <div class="flex items-center justify-between text-[11px]">
+                <span class="text-amber-300 font-semibold">{relPath}</span>
+                {#if redeployComposeDir}
+                  <span class="text-slate-500 mx-2">→</span>
+                  <span
+                    class="text-cyan-300 truncate max-w-[240px]"
+                    title="{redeployComposeDir.replace(/\/+$/, '')}/{relPath.replace(/^\.\/?/, '')}"
+                  >
+                    {redeployComposeDir.replace(/\/+$/, "")}/{relPath.replace(/^\.\/?/, "")}
+                  </span>
+                {/if}
+              </div>
+            {/each}
+          </div>
+
+          <div class="space-y-1.5 text-xs">
+            <label
+              for="redeploy-compose-dir"
+              class="font-semibold text-slate-300 flex items-center gap-1.5"
+            >
+              <Folder class="w-3.5 h-3.5 text-cyan-400" />
+              <span>Host Compose Directory (YAML Location)</span>
+            </label>
             <input
-              type="checkbox"
-              bind:checked={redeployAutoConvert}
-              class="mt-0.5 rounded border-amber-500/40 bg-black/40 text-cyan-500 focus:ring-0 cursor-pointer"
+              id="redeploy-compose-dir"
+              type="text"
+              bind:value={redeployComposeDir}
+              placeholder="e.g. /mnt/nvme_data/gitea"
+              class="w-full px-3 py-2 rounded-xl bg-[#090a10] border border-white/[0.1] text-xs font-mono text-white focus:outline-none focus:border-cyan-500/50"
             />
-            <div class="text-xs">
-              <span class="font-semibold text-amber-200"
-                >Convert relative paths to absolute host paths</span
-              >
-              <p class="text-[11px] text-slate-300 mt-0.5">
-                Permanently updates this stack's YAML so all containers and
-                restarts reliably find their data without breaking.
-              </p>
-            </div>
-          </label>
+          </div>
+
+          {#if redeployComposeDir.trim()}
+            <label
+              class="flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 cursor-pointer select-none"
+            >
+              <input
+                type="checkbox"
+                bind:checked={redeployAutoConvert}
+                class="mt-0.5 rounded border-amber-500/40 bg-black/40 text-cyan-500 focus:ring-0 cursor-pointer"
+              />
+              <div class="text-xs">
+                <span class="font-semibold text-amber-200"
+                  >Convert relative paths to absolute host paths</span
+                >
+                <p class="text-[11px] text-slate-300 mt-0.5">
+                  Permanently updates this stack's YAML so all containers and restarts reliably find their data.
+                </p>
+              </div>
+            </label>
+          {/if}
         {/if}
+
+        <!-- Affected Containers Preview -->
+        {#if modalContainers.length > 0}
+          <div class="space-y-1.5">
+            <div
+              class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider font-mono flex items-center justify-between"
+            >
+              <span>Affected Containers ({modalContainers.length})</span>
+            </div>
+            <div
+              class="p-2.5 rounded-xl bg-[#090a10] border border-white/[0.06] max-h-32 overflow-y-auto space-y-1.5"
+            >
+              {#each modalContainers as c}
+                <div class="flex items-center justify-between text-xs font-mono">
+                  <span class="text-cyan-300 font-semibold">{c.names?.[0]?.replace(/^\//, "") || c.id.slice(0, 12)}</span>
+                  <span class="text-slate-400 text-[11px] truncate max-w-[220px]">{c.image}</span>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+        <!-- Pull Latest Images Toggle Checkbox -->
+        <label
+          class="flex items-start gap-3 p-3.5 rounded-xl bg-violet-500/10 border border-violet-500/25 hover:border-violet-500/40 transition cursor-pointer select-none"
+        >
+          <input
+            type="checkbox"
+            bind:checked={redeployPullImages}
+            class="mt-0.5 rounded border-violet-500/40 bg-black/40 text-violet-500 focus:ring-0 cursor-pointer"
+          />
+          <div class="text-xs space-y-0.5">
+            <div class="font-semibold text-violet-200 flex items-center gap-1.5">
+              <span>Re-pull latest images before redeploying</span>
+              <span
+                class="px-1.5 py-0.2 rounded text-[9px] font-mono bg-violet-500/25 text-violet-300 border border-violet-500/40"
+                >Recommended</span
+              >
+            </div>
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+              Pulls newest image tags from remote registries before restarting containers. If unchecked, uses existing cached local images.
+            </p>
+          </div>
+        </label>
 
         <!-- Actions -->
         <div class="flex flex-wrap items-center justify-end gap-2.5 pt-2">
@@ -1775,33 +1836,37 @@
             Cancel
           </button>
 
-          <button
-            type="button"
-            onclick={confirmRedeployAsIs}
-            disabled={isRedeploySubmitting}
-            class="px-3.5 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.1] text-slate-300 hover:text-white text-xs font-semibold transition cursor-pointer"
-            title="Deploy using existing YAML with backend working directory fallback"
-          >
-            Redeploy As-Is
-          </button>
+          {#if redeployRelativePaths.length > 0}
+            <button
+              type="button"
+              onclick={confirmRedeployAsIs}
+              disabled={isRedeploySubmitting}
+              class="px-3.5 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.1] text-slate-300 hover:text-white text-xs font-semibold transition cursor-pointer"
+              title="Deploy using existing YAML with backend working directory fallback"
+            >
+              Redeploy As-Is
+            </button>
+          {/if}
 
           <button
             type="button"
-            onclick={confirmRedeployWithConversion}
+            onclick={confirmRedeploy}
             disabled={isRedeploySubmitting ||
-              (redeployAutoConvert && !redeployComposeDir.trim())}
-            class="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-600 hover:from-violet-500 hover:to-cyan-500 text-white text-xs font-semibold shadow-[0_0_20px_rgba(6,182,212,0.35)] border border-cyan-400/30 transition disabled:opacity-50 cursor-pointer"
+              (redeployRelativePaths.length > 0 && redeployAutoConvert && !redeployComposeDir.trim())}
+            class="flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-[0_0_20px_rgba(124,58,237,0.4)] border border-violet-400/30 transition disabled:opacity-50 cursor-pointer"
           >
             {#if isRedeploySubmitting}
               <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
               <span>Deploying...</span>
             {:else}
-              <RefreshCw class="w-3.5 h-3.5 text-cyan-200" />
-              <span
-                >{redeployAutoConvert && redeployComposeDir.trim()
+              <RotateCw class="w-3.5 h-3.5 text-cyan-300" />
+              <span>
+                {redeployRelativePaths.length > 0 && redeployAutoConvert && redeployComposeDir.trim()
                   ? "Update Paths & Redeploy"
-                  : "Confirm Redeploy"}</span
-              >
+                  : redeployPullImages
+                    ? "Pull Images & Redeploy"
+                    : "Redeploy with Existing Images"}
+              </span>
             {/if}
           </button>
         </div>
