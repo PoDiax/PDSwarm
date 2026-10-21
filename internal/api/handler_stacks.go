@@ -21,12 +21,14 @@ type CreateStackRequest struct {
 	ComposeYAML string `json:"compose_yaml"`
 	Env         string `json:"env,omitempty"`
 	Deploy      *bool  `json:"deploy,omitempty"`
+	PullImages  bool   `json:"pull_images,omitempty"`
 }
 
 type UpdateStackRequest struct {
 	ComposeYAML string `json:"compose_yaml"`
 	Env         string `json:"env,omitempty"`
 	Deploy      *bool  `json:"deploy,omitempty"`
+	PullImages  bool   `json:"pull_images,omitempty"`
 }
 
 type AdoptStackRequest struct {
@@ -41,6 +43,15 @@ func extractComposeDetails(ctx context.Context, ds *docker.Service, stackName st
 	}
 	if ds != nil {
 		return ds.ExtractOrSynthesizeComposeDetails(ctx, stackName, containers)
+	}
+	return extractComposeDetailsFast(containers)
+}
+
+// extractComposeDetailsFast reads compose YAML and env files directly from the host filesystem
+// using container labels without making any additional Docker API calls or container inspections.
+func extractComposeDetailsFast(containers []docker.ContainerSummary) (yamlContent string, envContent string, configFilePath string, workingDir string) {
+	if len(containers) == 0 {
+		return "", "", "", ""
 	}
 	c := containers[0]
 	workingDir = c.Labels["com.docker.compose.project.working_dir"]
@@ -99,26 +110,6 @@ func HandleListStacks(st store.Store, ds *docker.Service) http.HandlerFunc {
 			existing := make(map[string]bool)
 			for _, s := range stacks {
 				existing[s.Name] = true
-				// Self-heal previously saved stacks whose YAML was empty
-				if s.ComposeYAML == "" {
-					projContainers, _ := ds.GetStackContainers(r.Context(), s.Name)
-					if len(projContainers) > 0 {
-						recoveredYAML, recoveredEnv, cfgFile, wDir := extractComposeDetails(r.Context(), ds, s.Name, projContainers)
-						if recoveredYAML != "" {
-							s.ComposeYAML = recoveredYAML
-							if s.ConfigFile == "" {
-								s.ConfigFile = cfgFile
-							}
-							if s.WorkingDir == "" {
-								s.WorkingDir = wDir
-							}
-							if s.Env == "" && recoveredEnv != "" {
-								s.Env = recoveredEnv
-							}
-							_ = st.SaveStack(s)
-						}
-					}
-				}
 			}
 
 			containers, err := ds.ListContainers(r.Context(), true)
@@ -132,7 +123,21 @@ func HandleListStacks(st store.Store, ds *docker.Service) http.HandlerFunc {
 				}
 
 				for proj, projContainers := range discovered {
-					yamlContent, envContent, configFile, workingDir := extractComposeDetails(r.Context(), ds, proj, projContainers)
+					var yamlContent, envContent, configFile, workingDir string
+					if cache := ds.GetStackDetailCache(); cache != nil {
+						if details, found := cache.Get(proj); found {
+							yamlContent = details.ComposeYAML
+							envContent = details.Env
+							configFile = details.ConfigFile
+							workingDir = details.WorkingDir
+						}
+					}
+					if yamlContent == "" {
+						yamlContent, envContent, configFile, workingDir = extractComposeDetailsFast(projContainers)
+						if yamlContent == "" && ds != nil {
+							ds.EnqueueStackEnrichment(proj, projContainers)
+						}
+					}
 					createdAt := time.Unix(projContainers[0].Created, 0)
 					if projContainers[0].Created == 0 {
 						createdAt = time.Now()
@@ -172,7 +177,26 @@ func HandleGetStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 				if ds != nil {
 					containers, cErr := ds.GetStackContainers(r.Context(), name)
 					if cErr == nil && len(containers) > 0 {
-						yamlContent, envContent, configFile, workingDir := extractComposeDetails(r.Context(), ds, name, containers)
+						var yamlContent, envContent, configFile, workingDir string
+						if cache := ds.GetStackDetailCache(); cache != nil {
+							if details, found := cache.Get(name); found {
+								yamlContent = details.ComposeYAML
+								envContent = details.Env
+								configFile = details.ConfigFile
+								workingDir = details.WorkingDir
+							}
+						}
+						if yamlContent == "" {
+							yamlContent, envContent, configFile, workingDir = extractComposeDetails(r.Context(), ds, name, containers)
+							if cache := ds.GetStackDetailCache(); cache != nil && yamlContent != "" {
+								cache.Set(name, docker.CachedStackDetails{
+									ComposeYAML: yamlContent,
+									Env:         envContent,
+									ConfigFile:  configFile,
+									WorkingDir:  workingDir,
+								})
+							}
+						}
 						createdAt := time.Unix(containers[0].Created, 0)
 						if containers[0].Created == 0 {
 							createdAt = time.Now()
@@ -223,6 +247,14 @@ func HandleGetStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 							stack.Env = recoveredEnv
 						}
 						_ = st.SaveStack(stack)
+					}
+					if cache := ds.GetStackDetailCache(); cache != nil && recoveredYAML != "" {
+						cache.Set(name, docker.CachedStackDetails{
+							ComposeYAML: recoveredYAML,
+							Env:         recoveredEnv,
+							ConfigFile:  cfgFile,
+							WorkingDir:  wDir,
+						})
 					}
 				}
 				if stack.Env == "" && len(containers) > 0 {
@@ -310,7 +342,9 @@ func HandleCreateStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 
 		if shouldDeploy && ds != nil {
 			stack.Status = "deploying"
-			if err := ds.DeployStack(r.Context(), stack); err != nil {
+			if err := ds.DeployStackWithOptions(r.Context(), stack, nil, docker.DeployOptions{
+				PullImages: req.PullImages,
+			}); err != nil {
 				_ = st.DeleteStack(stack.Name)
 				respondJSONError(w, http.StatusInternalServerError, fmt.Sprintf("failed to deploy stack: %v", err))
 				return
@@ -393,7 +427,9 @@ func HandleUpdateStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 		}
 
 		if shouldDeploy && ds != nil {
-			if err := ds.DeployStack(r.Context(), stack); err != nil {
+			if err := ds.DeployStackWithOptions(r.Context(), stack, nil, docker.DeployOptions{
+				PullImages: req.PullImages,
+			}); err != nil {
 				stack.Status = "error"
 				_ = st.SaveStack(stack)
 				respondJSONError(w, http.StatusInternalServerError, fmt.Sprintf("failed to deploy updated stack: %v", err))
@@ -405,6 +441,12 @@ func HandleUpdateStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 		if err := st.SaveStack(stack); err != nil {
 			respondJSONError(w, http.StatusInternalServerError, "failed to save stack: "+err.Error())
 			return
+		}
+
+		if ds != nil {
+			if cache := ds.GetStackDetailCache(); cache != nil {
+				cache.Invalidate(name)
+			}
 		}
 
 		respondJSON(w, http.StatusOK, stack)
@@ -480,6 +522,9 @@ func HandleDownStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 							respondJSONError(w, http.StatusInternalServerError, fmt.Sprintf("failed to bring down stack: %v", err))
 							return
 						}
+						if cache := ds.GetStackDetailCache(); cache != nil {
+							cache.Invalidate(name)
+						}
 						respondJSON(w, http.StatusOK, map[string]string{"message": "stack brought down"})
 						return
 					}
@@ -495,6 +540,9 @@ func HandleDownStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 			if err := ds.DownStack(r.Context(), name); err != nil {
 				respondJSONError(w, http.StatusInternalServerError, fmt.Sprintf("failed to bring down stack: %v", err))
 				return
+			}
+			if cache := ds.GetStackDetailCache(); cache != nil {
+				cache.Invalidate(name)
 			}
 		}
 
@@ -526,6 +574,9 @@ func HandleDeleteStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 					containers, _ := ds.GetStackContainers(r.Context(), name)
 					if len(containers) > 0 {
 						_ = ds.DownStack(r.Context(), name)
+						if cache := ds.GetStackDetailCache(); cache != nil {
+							cache.Invalidate(name)
+						}
 						respondJSON(w, http.StatusOK, map[string]string{"message": "stack deleted"})
 						return
 					}
@@ -539,6 +590,9 @@ func HandleDeleteStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 
 		if ds != nil {
 			_ = ds.DownStack(r.Context(), name)
+			if cache := ds.GetStackDetailCache(); cache != nil {
+				cache.Invalidate(name)
+			}
 		}
 
 		if err := st.DeleteStack(name); err != nil {

@@ -89,6 +89,119 @@ func TestHandleListStacks_EmptyAndPopulated(t *testing.T) {
 	}
 }
 
+func TestHandleListStacks_FastDiscovery(t *testing.T) {
+	st := setupTestStore(t)
+	ds := docker.NewServiceWithClient(nil)
+	r := setupStackRouter(st, ds)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/stacks", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", rec.Code)
+	}
+}
+
+func TestHandleListStacks_WithCacheEnrichment(t *testing.T) {
+	st := setupTestStore(t)
+	ds := docker.NewServiceWithClient(nil)
+	cache := ds.GetStackDetailCache()
+	cache.Set("cached-project", docker.CachedStackDetails{
+		ComposeYAML: "services:\n  app:\n    image: redis",
+		Env:         "MODE=cached",
+	})
+
+	r := setupStackRouter(st, ds)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/stacks", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", rec.Code)
+	}
+}
+
+func TestHandleStackCacheInvalidation_OnUpdate(t *testing.T) {
+	st := setupTestStore(t)
+	ds := docker.NewServiceWithClient(nil)
+	cache := ds.GetStackDetailCache()
+	r := setupStackRouter(st, ds)
+
+	// Invalidate on update
+	_ = st.SaveStack(&store.Stack{
+		Name:        "cache-update-test",
+		ComposeYAML: "services:\n  app:\n    image: alpine",
+		Status:      "running",
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	})
+	cache.Set("cache-update-test", docker.CachedStackDetails{
+		ComposeYAML: "services:\n  app:\n    image: alpine",
+	})
+	if _, ok := cache.Get("cache-update-test"); !ok {
+		t.Fatal("expected cache entry before update")
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"compose_yaml": "services:\n  app:\n    image: nginx",
+		"deploy":       false,
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/stacks/cache-update-test", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if _, ok := cache.Get("cache-update-test"); ok {
+		t.Errorf("expected cache to be invalidated after update")
+	}
+}
+
+func TestHandleStackCacheInvalidation_OnDownAndDelete(t *testing.T) {
+	ds, err := docker.NewService("")
+	if err != nil {
+		t.Skip("docker not available")
+	}
+	st := setupTestStore(t)
+	cache := ds.GetStackDetailCache()
+	r := setupStackRouter(st, ds)
+
+	_ = st.SaveStack(&store.Stack{
+		Name:        "nonexistent-down-stack",
+		ComposeYAML: "services:\n  app:\n    image: alpine",
+		Status:      "running",
+	})
+	cache.Set("nonexistent-down-stack", docker.CachedStackDetails{
+		ComposeYAML: "services:\n  app:\n    image: alpine",
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/stacks/nonexistent-down-stack/down", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", rec.Code)
+	}
+	if _, ok := cache.Get("nonexistent-down-stack"); ok {
+		t.Errorf("expected cache to be invalidated after down")
+	}
+
+	// Delete
+	cache.Set("nonexistent-down-stack", docker.CachedStackDetails{
+		ComposeYAML: "services:\n  app:\n    image: alpine",
+	})
+	req = httptest.NewRequest(http.MethodDelete, "/api/stacks/nonexistent-down-stack", nil)
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", rec.Code)
+	}
+	if _, ok := cache.Get("nonexistent-down-stack"); ok {
+		t.Errorf("expected cache to be invalidated after delete")
+	}
+}
+
 func TestHandleGetStack(t *testing.T) {
 	st := setupTestStore(t)
 	r := setupStackRouter(st, nil)
