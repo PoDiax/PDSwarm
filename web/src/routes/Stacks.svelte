@@ -31,6 +31,7 @@
     Folder,
   } from '@lucide/svelte';
   import AdoptStackModal from "../lib/components/AdoptStackModal.svelte";
+  import ViewportGate from "../lib/components/ViewportGate.svelte";
   import { stackApi, containerApi } from "../lib/api";
   import { imageUpdateStore } from "../lib/stores/imageUpdates.svelte";
   import type { Stack, Container } from "../lib/types";
@@ -962,9 +963,10 @@
           .map((c) => c.Image)
           .filter(Boolean)}
 
-        <div
-          class="rounded-2xl bg-[#12131c] border border-white/[0.08] shadow-lg transition-all duration-150 overflow-hidden hover:border-violet-500/30"
-        >
+        <ViewportGate minHeight="78px" rootMargin="350px 0px" keepMounted={isExpanded}>
+          <div
+            class="rounded-2xl bg-[#12131c] border border-white/[0.08] shadow-lg transition-all duration-150 overflow-hidden hover:border-violet-500/30"
+          >
           <!-- Main Stack Row Header -->
           <div
             class="p-4 sm:p-5 flex flex-wrap items-center justify-between gap-4"
@@ -1519,7 +1521,8 @@
             </div>
           {/if}
         </div>
-      {/each}
+      </ViewportGate>
+    {/each}
     </div>
   {/if}
 
