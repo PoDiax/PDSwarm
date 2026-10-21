@@ -78,6 +78,7 @@
 
   // Expanded Stack accordion rows
   let expandedStacks = $state<Record<string, boolean>>({});
+  let loadingDetails = $state<Record<string, boolean>>({});
 
   // Action busy states
   let actionBusy = $state<Record<string, string>>({});
@@ -399,8 +400,36 @@
   }
 
   // Toggle accordion expand
-  function toggleExpand(name: string) {
-    expandedStacks[name] = !expandedStacks[name];
+  async function toggleExpand(name: string) {
+    const isNowExpanded = !expandedStacks[name];
+    expandedStacks[name] = isNowExpanded;
+
+    if (isNowExpanded) {
+      const targetStack = stacks.find((s) => s.name === name);
+      if (targetStack && !targetStack.compose_yaml && !loadingDetails[name]) {
+        loadingDetails[name] = true;
+        try {
+          const full = await stackApi.get(name);
+          if (full && full.compose_yaml) {
+            stacks = stacks.map((s) =>
+              s.name === name
+                ? {
+                    ...s,
+                    compose_yaml: full.compose_yaml,
+                    env: full.env || s.env,
+                    config_file: full.config_file || s.config_file,
+                    working_dir: full.working_dir || s.working_dir,
+                  }
+                : s,
+            );
+          }
+        } catch {
+          // Keep fast representation on error
+        } finally {
+          loadingDetails[name] = false;
+        }
+      }
+    }
   }
 
   let isCheckingUpdates = $state(false);
@@ -1423,7 +1452,14 @@
                   </div>
                 </div>
 
-                {#if stack.compose_yaml}
+                {#if loadingDetails[stack.name]}
+                  <div
+                    class="p-6 rounded-xl bg-[#090a10] border border-white/[0.06] flex items-center justify-center gap-2.5 text-xs text-slate-400 font-mono"
+                  >
+                    <LoaderCircle class="w-4 h-4 text-violet-400 animate-spin" />
+                    <span>Loading compose configuration...</span>
+                  </div>
+                {:else if stack.compose_yaml}
                   <div
                     class="max-h-60 overflow-y-auto rounded-xl bg-[#090a10] border border-white/[0.06] p-3 text-xs font-mono text-slate-300 whitespace-pre"
                   >
