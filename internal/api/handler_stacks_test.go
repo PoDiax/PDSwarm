@@ -320,6 +320,7 @@ func TestHandleUpdateStack(t *testing.T) {
 	_ = st.SaveStack(&store.Stack{
 		Name:        "update-test",
 		ComposeYAML: "services:\n  app:\n    image: alpine",
+		Env:         "POSTGRES_PASSWORD=secret123\nMY_VAR=hello",
 		Status:      "stopped",
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
@@ -366,6 +367,9 @@ func TestHandleUpdateStack(t *testing.T) {
 	}
 	if updated.ComposeYAML != "services:\n  app:\n    image: nginx:alpine" {
 		t.Errorf("stack YAML was not updated in store")
+	}
+	if updated.Env != "POSTGRES_PASSWORD=secret123\nMY_VAR=hello" {
+		t.Errorf("stack Env was not preserved in store when update request omitted env, got %q", updated.Env)
 	}
 
 	// Valid update with deploy=true and mock docker service triggers background task

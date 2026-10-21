@@ -471,15 +471,15 @@
 
   // Action: Deploy / Redeploy
   async function handleRedeploy(stack: Stack) {
-    if (!stack.compose_yaml) {
+    if (!stack.compose_yaml || stack.env === undefined) {
       try {
         actionBusy[stack.name] = "deploying";
         const detailed = await stackApi.get(stack.name);
-        if (detailed && detailed.compose_yaml) {
-          stack.compose_yaml = detailed.compose_yaml;
-          stack.env = detailed.env;
-          stack.working_dir = detailed.working_dir;
-          stack.config_file = detailed.config_file;
+        if (detailed) {
+          if (detailed.compose_yaml) stack.compose_yaml = detailed.compose_yaml;
+          if (detailed.env !== undefined) stack.env = detailed.env;
+          if (detailed.working_dir) stack.working_dir = detailed.working_dir;
+          if (detailed.config_file) stack.config_file = detailed.config_file;
         }
       } catch {
         // proceed with whatever is present
@@ -504,7 +504,7 @@
   ) {
     actionBusy[stack.name] = "deploying";
     try {
-      await stackApi.update(stack.name, yamlToDeploy, true, stack.env, pullImages);
+      await stackApi.update(stack.name, yamlToDeploy, true, stack.env || undefined, pullImages);
       showFeedback("success", `Stack "${stack.name}" redeployment started in background.`);
       tasksStore.poll();
       await loadData(true);
@@ -1717,6 +1717,20 @@
             </p>
           </div>
         </div>
+
+        <!-- Environment Variables Summary -->
+        {#if redeployModalStack.env && redeployModalStack.env.trim()}
+          {@const envLines = redeployModalStack.env.trim().split('\n').filter(l => l.trim() && !l.startsWith('#'))}
+          <div class="flex items-center justify-between p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-xs">
+            <div class="flex items-center gap-2 text-cyan-300 font-medium">
+              <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+              <span>Environment Configuration Active</span>
+            </div>
+            <span class="text-[11px] font-mono text-cyan-400 bg-cyan-500/15 px-2 py-0.5 rounded-md border border-cyan-500/30">
+              {envLines.length} variable{envLines.length === 1 ? '' : 's'} loaded
+            </span>
+          </div>
+        {/if}
 
         <!-- Relative Volume Warnings (if detected) -->
         {#if redeployRelativePaths.length > 0}

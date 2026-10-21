@@ -411,14 +411,40 @@ func HandleUpdateStack(st store.Store, ds *docker.Service) http.HandlerFunc {
 			return
 		}
 
-		envMap := docker.ParseEnvFile(req.Env)
+		// Preserve existing stack.Env if req.Env was not provided in request
+		effectiveEnv := stack.Env
+		if strings.TrimSpace(req.Env) != "" {
+			stack.Env = req.Env
+			effectiveEnv = req.Env
+		} else if stack.Env == "" && stack.WorkingDir != "" {
+			// If stack has no env in DB, recover from working dir .env
+			for _, name := range []string{"stack.env", ".env"} {
+				if data, err := os.ReadFile(filepath.Join(stack.WorkingDir, name)); err == nil && len(data) > 0 {
+					stack.Env = string(data)
+					effectiveEnv = stack.Env
+					break
+				}
+			}
+		}
+
+		envMap := docker.ParseEnvFile(effectiveEnv)
+		if stack.WorkingDir != "" {
+			if data, err := os.ReadFile(filepath.Join(stack.WorkingDir, ".env")); err == nil {
+				diskMap := docker.ParseEnvFile(string(data))
+				for k, v := range diskMap {
+					if _, exists := envMap[k]; !exists {
+						envMap[k] = v
+					}
+				}
+			}
+		}
+
 		if _, err := docker.ParseComposeYAMLWithEnv(trimmedYAML, envMap); err != nil {
 			respondJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid compose yaml: %v", err))
 			return
 		}
 
 		stack.ComposeYAML = trimmedYAML
-		stack.Env = req.Env
 		stack.IsExternal = false // Elevated to fully managed PDSwarm stack
 		stack.UpdatedAt = time.Now()
 

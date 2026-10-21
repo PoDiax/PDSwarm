@@ -375,10 +375,13 @@ func (s *Service) DeployStackWithOptions(ctx context.Context, stack *store.Stack
 		}
 	}
 	if stack.WorkingDir != "" {
-		envFilePath := filepath.Join(stack.WorkingDir, ".env")
-		if data, err := os.ReadFile(envFilePath); err == nil {
-			for k, v := range ParseEnvFile(string(data)) {
-				combinedEnv[k] = v
+		for _, name := range []string{".env", "stack.env"} {
+			envFilePath := filepath.Join(stack.WorkingDir, name)
+			if data, err := os.ReadFile(envFilePath); err == nil {
+				for k, v := range ParseEnvFile(string(data)) {
+					combinedEnv[k] = v
+				}
+				break
 			}
 		}
 	}
@@ -664,8 +667,18 @@ func (s *Service) DeployStackWithOptions(ctx context.Context, stack *store.Stack
 				}
 			}
 		}
-		// 2. Explicit service environment takes priority
-		containerEnv = append(containerEnv, svcCfg.Environment...)
+		// 2. Explicit service environment takes priority (resolving bare variable names from combinedEnv)
+		for _, envEntry := range svcCfg.Environment {
+			parts := strings.SplitN(envEntry, "=", 2)
+			if len(parts) == 1 {
+				// Bare variable name without value (e.g. "DB_PASSWORD") - resolve from combinedEnv
+				if val, ok := combinedEnv[parts[0]]; ok {
+					containerEnv = append(containerEnv, fmt.Sprintf("%s=%s", parts[0], val))
+					continue
+				}
+			}
+			containerEnv = append(containerEnv, envEntry)
+		}
 
 		containerConfig := &container.Config{
 			Image:        svcCfg.Image,
