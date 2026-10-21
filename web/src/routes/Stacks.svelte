@@ -1718,20 +1718,6 @@
           </div>
         </div>
 
-        <!-- Environment Variables Summary -->
-        {#if redeployModalStack.env && redeployModalStack.env.trim()}
-          {@const envLines = redeployModalStack.env.trim().split('\n').filter(l => l.trim() && !l.startsWith('#'))}
-          <div class="flex items-center justify-between p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-xs">
-            <div class="flex items-center gap-2 text-cyan-300 font-medium">
-              <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
-              <span>Environment Configuration Active</span>
-            </div>
-            <span class="text-[11px] font-mono text-cyan-400 bg-cyan-500/15 px-2 py-0.5 rounded-md border border-cyan-500/30">
-              {envLines.length} variable{envLines.length === 1 ? '' : 's'} loaded
-            </span>
-          </div>
-        {/if}
-
         <!-- Relative Volume Warnings (if detected) -->
         {#if redeployRelativePaths.length > 0}
           <p class="text-xs text-slate-300 leading-relaxed">
